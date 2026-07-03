@@ -10,11 +10,11 @@ defineProps<{
 
 <template>
     <header
-        class="flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-border/70 px-6 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12 md:px-4"
+        class="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border/70 px-4 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12"
     >
+        <!-- Breadcrumbs on the start (left) -->
         <div class="flex items-center gap-2">
-            <SidebarTrigger class="-ml-1" />
-            <template v-if="breadcrumbs.length > 0">
+            <template v-if="breadcrumbs && breadcrumbs.length > 0">
                 <Breadcrumb>
                     <BreadcrumbList>
                         <template v-for="(item, index) in breadcrumbs" :key="index">
@@ -34,5 +34,8 @@ defineProps<{
                 </Breadcrumb>
             </template>
         </div>
+
+        <!-- Sidebar trigger on the end (right) — nearest the sidebar -->
+        <SidebarTrigger class="-me-1 text-sidebar-foreground hover:text-primary" />
     </header>
 </template>

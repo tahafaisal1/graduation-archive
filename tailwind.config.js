@@ -13,6 +13,8 @@ export default {
         extend: {
             fontFamily: {
                 sans: ['Instrument Sans', ...defaultTheme.fontFamily.sans],
+                display: ['Tajawal', 'sans-serif'],
+                body: ['IBM Plex Sans Arabic', 'sans-serif'],
             },
             borderRadius: {
                 lg: 'var(--radius)',
@@ -20,7 +22,19 @@ export default {
                 sm: 'calc(var(--radius) - 4px)',
             },
             colors: {
-                background: 'hsl(var(--background))',
+                // Brand colors — college identity (hex tokens)
+                primary: {
+                    DEFAULT: '#1B6B93',
+                    dark: '#103A52',
+                    light: '#4FA8C9',
+                    foreground: 'hsl(var(--primary-foreground))',
+                },
+                surface: '#FFFFFF',
+                background: '#F7F9FA',
+                border: '#E2E8ED',
+                'text-dark': '#0E2433',
+                'text-muted': '#5C7689',
+                // shadcn/ui CSS-variable tokens (kept for component compatibility)
                 foreground: 'hsl(var(--foreground))',
                 card: {
                     DEFAULT: 'hsl(var(--card))',
@@ -29,10 +43,6 @@ export default {
                 popover: {
                     DEFAULT: 'hsl(var(--popover))',
                     foreground: 'hsl(var(--popover-foreground))',
-                },
-                primary: {
-                    DEFAULT: 'hsl(var(--primary))',
-                    foreground: 'hsl(var(--primary-foreground))',
                 },
                 secondary: {
                     DEFAULT: 'hsl(var(--secondary))',
@@ -50,7 +60,6 @@ export default {
                     DEFAULT: 'hsl(var(--destructive))',
                     foreground: 'hsl(var(--destructive-foreground))',
                 },
-                border: 'hsl(var(--border))',
                 input: 'hsl(var(--input))',
                 ring: 'hsl(var(--ring))',
                 chart: {

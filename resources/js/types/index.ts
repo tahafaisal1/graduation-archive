@@ -16,6 +16,13 @@ export interface NavItem {
     isActive?: boolean;
 }
 
+export interface SimilarProject {
+    id: number;
+    project_title: string;
+    academic_year: string;
+    department: string | null;
+}
+
 export interface SharedData {
     name: string;
     quote: { message: string; author: string };
@@ -27,6 +34,12 @@ export interface SharedData {
         defaults: Record<string, unknown>;
         routes: Record<string, string>;
     };
+    flash?: {
+        success?: string;
+        error?: string;
+        similarity_warning?: SimilarProject[];
+    };
+    [key: string]: unknown;
 }
 
 export interface User {
@@ -38,6 +51,7 @@ export interface User {
     created_at: string;
     updated_at: string;
     role?: string;
+    department_id?: number | null;
 }
 
 export type BreadcrumbItemType = BreadcrumbItem;

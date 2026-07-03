@@ -27,6 +27,14 @@ class HandleInertiaRequests extends Middleware
                     'role' => $request->user()->getRoleNames()->first(),
                 ]) : null,
             ],
+            'flash' => [
+                'success'            => $request->session()->get('success'),
+                'error'              => $request->session()->get('error'),
+                'similarity_warning' => $request->session()->get('similarity_warning'),
+                'preview'            => $request->session()->get('preview'),
+                'import_summary'     => $request->session()->get('import_summary'),
+                'pdf_summary'        => $request->session()->get('pdf_summary'),
+            ],
         ]);
     }
 }

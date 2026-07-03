@@ -11,9 +11,8 @@ return new class extends Migration
         Schema::create('evaluations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('project_id')->constrained('projects')->cascadeOnDelete();
-            $table->decimal('score', 5, 2);
-            $table->text('notes')->nullable();
-            $table->foreignId('evaluated_by')->constrained('users');
+            $table->foreignId('examiner_id')->constrained('examiners')->cascadeOnDelete();
+            $table->text('notes');
             $table->timestamps();
         });
     }

@@ -12,6 +12,7 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             ProjectStatusSeeder::class,
             AdminSeeder::class,
+            DummyDataSeeder::class,
         ]);
     }
 }

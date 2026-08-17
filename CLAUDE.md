@@ -46,9 +46,10 @@ Phase 1 (Active Now):
 
 Phase 2 (Future):
 12. student_eligibility
-13. defense
-14. status_history
 15. supervisor_history
+
+Note: the project lifecycle has been scoped down to 2 statuses (see "Key Business Rules" below).
+DEFENSE and STATUS_HISTORY were never implemented — planning-only, now removed from scope entirely.
 
 ## Roles (RBAC via Spatie)
 1. super_admin — full access
@@ -63,7 +64,14 @@ Phase 2 (Future):
 - Final score entered by dept_manager only
 - PDF files only, max 15MB
 - Soft delete on projects (is_deleted field)
-- Project is single evolving entity (proposal → archived)
+- Project lifecycle is exactly 2 statuses: "مقترح" (proposal, id=2) → "مؤرشف" (archived, id=1).
+  IDs kept as originally seeded (id=1 already meant "archived" everywhere in the codebase —
+  ProjectController, PublicController, SearchService, ReportService, ProjectsImport — so only
+  the seeded Arabic text/sort_order changed, not which ID means what).
+- Two approval gates — supervisor approval and department approval — are tracked as fields on
+  `projects` (`supervisor_approved_by/_at`, `department_approved_by/_at`), not as separate
+  lifecycle statuses. Both nullable; `Project::isSupervisorApproved()`/`isDepartmentApproved()`
+  check the `_at` timestamp.
 - Only milestone documents saved (not every draft)
 - dept_staff projects need dept_manager approval before publishing
 - Supervisor role = approval gates in lifecycle (no CRUD)
@@ -85,11 +93,11 @@ Phase 2 (Future):
 
 ## Phase 2 Features (Future)
 - Student eligibility system
-- Full project lifecycle (11 stages)
-- Supervisor approval gates
-- Defense scheduling
-- Document milestone tracking
-- Status history logging
+- Supervisor history tracking
+
+Explicitly out of scope (not planned): the original 11-stage/8-status lifecycle, defense
+scheduling, and status history logging. Supervisor and department approval are handled as
+fields on `projects`, not as pipeline stages — see "Key Business Rules".
 
 ## Coding Conventions
 - Controllers: ResourceController pattern
@@ -115,6 +123,15 @@ Phase 2 (Future):
 - Max upload: 15MB PDF only
 
 ## Current Status
+- ✅ Project Lifecycle Scope-Down — 220/220 total suite (0 failures; the 10 previously-noted ext-zip failures no longer reproduce in this environment)
+  - Migration `2026_08_17_220723_add_approval_gates_to_projects_table.php` — adds nullable `supervisor_approved_by`/`supervisor_approved_at`/`department_approved_by`/`department_approved_at` to `projects` (FKs nullOnDelete to users); original `projects`/`project_status` migrations untouched
+  - ProjectStatusSeeder — narrowed from 10 rows to exactly 2: id=1 "مؤرشف" (archived, sort_order=2), id=2 "مقترح" (proposal, sort_order=1). IDs kept as originally seeded — id=1 already meant "archived" everywhere (ProjectController, PublicController, SearchService, ReportService, ProjectsImport) — only the Arabic text/sort_order changed, avoiding a much larger, riskier flip of existing business logic
+  - DummyDataSeeder — 3 demo projects that referenced removed statuses 5/6 (in_progress, ready_for_defense) reassigned to status_id 2 (مقترح); dev DB rebuilt via `migrate:fresh --seed`
+  - Project model (app/Models/Project.php) — added supervisor_approved_by/_at, department_approved_by/_at to fillable/casts; supervisorApprovedBy()/departmentApprovedBy() BelongsTo relationships; isSupervisorApproved()/isDepartmentApproved() helper methods
+  - Projects/Index.vue + Projects/Show.vue — STATUS_COLORS/STATUS_LABELS maps and the `canApprove` gate were keyed on the old English status_name values (archived/proposal_submitted) plus 8 dead Phase-2 keys; updated to match the new Arabic status_name values so the Approve button and status badges keep working
+  - tests/Feature/Seeders/ProjectStatusSeederTest.php — rewritten (was asserting the old 10-status/English-name spec, which this change intentionally supersedes)
+  - tests/Feature/Project/ProjectApprovalTest.php — new, 2 tests: default status + null approvals on creation; both approval fields settable and status manually movable to archived
+  - STATUS_HISTORY and DEFENSE audited codebase-wide: never implemented (planning docs only, no migration/model/controller) — nothing removed because nothing existed. PROJECT_DOCUMENT (`project_documents` table) exists and remains fully in scope, unrelated to this change.
 - ✅ Public Browse + Auth Flow Fix — 208/218 total suite (10 pre-existing Import ext-zip failures)
   - PublicController (app/Http/Controllers/PublicController.php) — index() passes real stats to Welcome; browse() filters archived projects (status_id=1, not deleted) by search/dept/spec/year, paginates 12; show() aborts 404 if not archived/deleted, increments visit_count, returns related projects
   - routes/web.php — GET / → PublicController::index (home), GET /browse → public.browse, GET /browse/{id} → public.show; all outside auth middleware

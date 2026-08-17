@@ -135,22 +135,20 @@ Note: `description` column added by migration `2026_06_17_000001_add_description
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Seeded statuses (from ProjectStatusSeeder):**
+**Seeded statuses (from ProjectStatusSeeder, updated 2026-08-17 — lifecycle scoped down to 2 statuses):**
 
 | id | status_name | sort_order | is_active |
 |---|---|---|---|
-| 1 | archived | 8 | true |
-| 2 | proposal_submitted | 1 | false |
-| 3 | supervisor_approved | 2 | false |
-| 4 | hod_approved | 3 | false |
-| 5 | in_progress | 4 | false |
-| 6 | ready_for_defense | 5 | false |
-| 7 | under_defense | 6 | false |
-| 8 | revisions_required | 7 | false |
-| 9 | rejected | 9 | false |
-| 10 | cancelled | 10 | false |
+| 1 | مؤرشف (archived) | 2 | true |
+| 2 | مقترح (proposal) | 1 | true |
 
-Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
+Note: IDs kept as originally seeded (id=1 already meant "archived" everywhere in the codebase),
+only the Arabic text and sort_order changed. The original 8 Phase-2 placeholder statuses
+(supervisor_approved, hod_approved, in_progress, ready_for_defense, under_defense,
+revisions_required, rejected, cancelled) are removed — they were never referenced by any
+controller, service, or Vue component (confirmed by codebase-wide audit), only present in
+seed data. Supervisor and department approval are now tracked as fields on `projects` (see
+below), not as separate lifecycle statuses.
 
 ### Table: projects
 
@@ -164,6 +162,10 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 | specialization_id | bigint unsigned, FK | No | — | FK to specializations.id |
 | supervisor_id | bigint unsigned, FK | No | — | FK to users.id |
 | current_status_id | tinyint unsigned, FK | No | — | FK to project_status.id |
+| supervisor_approved_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — added 2026-08-17 |
+| supervisor_approved_at | timestamp | Yes | null | Supervisor approval gate — added 2026-08-17 |
+| department_approved_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — added 2026-08-17 |
+| department_approved_at | timestamp | Yes | null | Department approval gate — added 2026-08-17 |
 | based_on_project_id | bigint unsigned, FK | Yes | null | FK to projects.id (nullOnDelete) — evolution link |
 | draft_file_path | varchar(255) | Yes | null | Path to uploaded PDF in public storage |
 | final_score | decimal(5,2) | Yes | null | Final score out of 100 |
@@ -172,7 +174,12 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `current_status_id` to project_status.id, `based_on_project_id` to projects.id (self-referential, nullOnDelete).
+**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `current_status_id` to project_status.id, `supervisor_approved_by`/`department_approved_by` to users.id (nullOnDelete), `based_on_project_id` to projects.id (self-referential, nullOnDelete).
+
+Note: `project_documents` (milestone document tracking) already existed prior to this change and
+remains fully in scope — it is unrelated to the removed lifecycle statuses. STATUS_HISTORY and
+DEFENSE tables were audited codebase-wide and confirmed to have never been implemented (planning
+docs only, no migration/model/controller) — nothing was removed because nothing existed.
 
 ### Table: project_students
 
@@ -292,18 +299,23 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 
 - **Table:** projects
 - **Traits:** HasFactory
-- **Fillable:** project_title, description, academic_year, department_id, specialization_id, supervisor_id, current_status_id, based_on_project_id, draft_file_path, final_score, visit_count, is_deleted
-- **Casts:** is_deleted (boolean), final_score (decimal:2)
+- **Fillable:** project_title, description, academic_year, department_id, specialization_id, supervisor_id, current_status_id, based_on_project_id, draft_file_path, final_score, visit_count, is_deleted, supervisor_approved_by, supervisor_approved_at, department_approved_by, department_approved_at
+- **Casts:** is_deleted (boolean), final_score (decimal:2), supervisor_approved_at (datetime), department_approved_at (datetime)
 - **Relationships:**
   - `department()` — BelongsTo(Department)
   - `specialization()` — BelongsTo(Specialization)
   - `supervisor()` — BelongsTo(User), FK: supervisor_id
   - `currentStatus()` — BelongsTo(ProjectStatus), FK: current_status_id
   - `basedOn()` — BelongsTo(Project), FK: based_on_project_id (self-referential)
+  - `supervisorApprovedBy()` — BelongsTo(User), FK: supervisor_approved_by — added 2026-08-17
+  - `departmentApprovedBy()` — BelongsTo(User), FK: department_approved_by — added 2026-08-17
   - `students()` — HasMany(ProjectStudent)
   - `documents()` — HasMany(ProjectDocument)
   - `evaluations()` — HasMany(Evaluation)
   - `examiners()` — BelongsToMany(Examiner, pivot: project_examiners), using ProjectExaminer pivot model, withPivot('assigned_by'), withTimestamps()
+- **Helper methods (added 2026-08-17):**
+  - `isSupervisorApproved(): bool` — true when `supervisor_approved_at` is non-null
+  - `isDepartmentApproved(): bool` — true when `department_approved_at` is non-null
 
 ### app/Models/ProjectStatus.php
 

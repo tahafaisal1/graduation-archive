@@ -3,6 +3,7 @@ import AssignExaminerModal from '@/components/AssignExaminerModal.vue';
 import ConfirmDelete from '@/components/ConfirmDelete.vue';
 import ScoreInput from '@/components/ScoreInput.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { isPendingApproval, statusColor, statusLabel } from '@/composables/useProjectStatus';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -65,7 +66,7 @@ const canDelete = computed(() => ['dept_manager', 'super_admin'].includes(userRo
 const canManage = computed(() => ['dept_manager', 'super_admin'].includes(userRole.value));
 const canApprove = computed(() =>
     ['dept_manager', 'super_admin'].includes(userRole.value)
-    && props.project.current_status?.status_name === 'مقترح'
+    && isPendingApproval(props.project.current_status?.status_name)
 );
 
 // ── Project actions ────────────────────────────────────────────────
@@ -108,24 +109,7 @@ const finalScore = computed(() => {
 
 const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value >= PASS_THRESHOLD);
 
-// ── Status helpers ─────────────────────────────────────────────────
-const STATUS_COLORS: Record<string, string> = {
-    'مؤرشف': 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-    'مقترح': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-    'مؤرشف': 'مؤرشف',
-    'مقترح': 'في انتظار الموافقة',
-};
-
-function statusColor(name: string) {
-    return STATUS_COLORS[name] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
-}
-
-function statusLabel(name: string) {
-    return STATUS_LABELS[name] ?? name;
-}
+// ── Status helpers now come from @/composables/useProjectStatus ──────
 
 const pdfUrl = computed(() =>
     props.project.draft_file_path ? `/storage/${props.project.draft_file_path}` : null

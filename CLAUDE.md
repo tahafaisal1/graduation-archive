@@ -46,7 +46,7 @@ Phase 1 (Active Now):
 
 Phase 2 (Future):
 12. student_eligibility
-15. supervisor_history
+13. supervisor_history
 
 Note: the project lifecycle has been scoped down to 2 statuses (see "Key Business Rules" below).
 DEFENSE and STATUS_HISTORY were never implemented — planning-only, now removed from scope entirely.

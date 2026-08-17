@@ -4,6 +4,7 @@ import FilterPanel, { type FilterValues } from '@/components/FilterPanel.vue';
 import SearchBar from '@/components/SearchBar.vue';
 import SimilarityWarning from '@/components/SimilarityWarning.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { isPendingApproval, statusColor, statusLabel } from '@/composables/useProjectStatus';
 import { type BreadcrumbItem, type SharedData, type SimilarProject } from '@/types';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref } from 'vue';
@@ -198,7 +199,7 @@ function canEdit(_p: Project) {
 
 function canApprove(p: Project) {
     return ['dept_manager', 'super_admin'].includes(userRole.value)
-        && p.current_status?.status_name === 'مقترح';
+        && isPendingApproval(p.current_status?.status_name);
 }
 
 // ── Actions ──────────────────────────────────────────────────────────
@@ -216,20 +217,7 @@ function approveProject(id: number) {
     router.post(route('projects.approve', [id]));
 }
 
-// ── Status helpers ───────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-    'مؤرشف': 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-    'مقترح': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-    'مؤرشف': 'مؤرشف',
-    'مقترح': 'في انتظار الموافقة',
-};
-
-function statusColor(name: string) { return STATUS_COLORS[name] ?? 'bg-gray-100 text-gray-600'; }
-function statusLabel(name: string) { return STATUS_LABELS[name] ?? name; }
+// ── Status helpers now come from @/composables/useProjectStatus ──────
 </script>
 
 <template>

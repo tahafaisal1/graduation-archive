@@ -202,7 +202,7 @@ class DummyDataSeeder extends Seeder
             // Software Engineering — Web Development
             ['title' => 'نظام إدارة المكتبة الإلكترونية',                        'dept' => 'SW', 'spec' => 'Web Development',       'year' => '2023/2024', 'status' => 1, 'score' => 87.50, 'visits' => 134],
             ['title' => 'منصة التجارة الإلكترونية للمنتجات المحلية',              'dept' => 'SW', 'spec' => 'Web Development',       'year' => '2024/2025', 'status' => 1, 'score' => 91.00, 'visits' => 98],
-            ['title' => 'بوابة التعليم الإلكتروني للمدارس الثانوية',              'dept' => 'SW', 'spec' => 'Web Development',       'year' => '2025/2026', 'status' => 5, 'score' => null,  'visits' => 23],
+            ['title' => 'بوابة التعليم الإلكتروني للمدارس الثانوية',              'dept' => 'SW', 'spec' => 'Web Development',       'year' => '2025/2026', 'status' => 2, 'score' => null,  'visits' => 23],
             // Software Engineering — Mobile Development
             ['title' => 'تطبيق متابعة النشاط البدني للرياضيين',                   'dept' => 'SW', 'spec' => 'Mobile Development',    'year' => '2023/2024', 'status' => 1, 'score' => 78.50, 'visits' => 57],
             ['title' => 'تطبيق إدارة الأدوية للمرضى المزمنين',                   'dept' => 'SW', 'spec' => 'Mobile Development',    'year' => '2024/2025', 'status' => 1, 'score' => null,  'visits' => 12],
@@ -219,14 +219,14 @@ class DummyDataSeeder extends Seeder
             // Networks Engineering — Cloud Computing
             ['title' => 'نظام النسخ الاحتياطي السحابي للشركات الصغيرة',          'dept' => 'NET', 'spec' => 'Cloud Computing',    'year' => '2023/2024', 'status' => 1, 'score' => 90.00, 'visits' => 79],
             ['title' => 'منصة الحوسبة السحابية للتطبيقات الحكومية',              'dept' => 'NET', 'spec' => 'Cloud Computing',    'year' => '2024/2025', 'status' => 1, 'score' => null,  'visits' => 18],
-            ['title' => 'تحسين أداء الشبكات السحابية الموزعة',                   'dept' => 'NET', 'spec' => 'Cloud Computing',    'year' => '2025/2026', 'status' => 5, 'score' => null,  'visits' => 8],
+            ['title' => 'تحسين أداء الشبكات السحابية الموزعة',                   'dept' => 'NET', 'spec' => 'Cloud Computing',    'year' => '2025/2026', 'status' => 2, 'score' => null,  'visits' => 8],
             // Networks Engineering — Wireless Networks
             ['title' => 'تحسين تغطية شبكات الواي فاي في المباني الجامعية',       'dept' => 'NET', 'spec' => 'Wireless Networks',  'year' => '2024/2025', 'status' => 1, 'score' => 85.50, 'visits' => 66],
             ['title' => 'نظام مراقبة الشبكات اللاسلكية في الوقت الفعلي',        'dept' => 'NET', 'spec' => 'Wireless Networks',  'year' => '2023/2024', 'status' => 1, 'score' => 79.00, 'visits' => 52],
             // Electronics Engineering — Embedded Systems
             ['title' => 'نظام إدارة البيت الذكي باستخدام الميكروكنترولر',         'dept' => 'ELEC', 'spec' => 'Embedded Systems',  'year' => '2023/2024', 'status' => 1, 'score' => 92.50, 'visits' => 139],
             ['title' => 'روبوت التنقل الذاتي في البيئات الداخلية',               'dept' => 'ELEC', 'spec' => 'Embedded Systems',  'year' => '2024/2025', 'status' => 1, 'score' => 86.00, 'visits' => 73],
-            ['title' => 'نظام مراقبة الطاقة الشمسية في المناطق النائية',         'dept' => 'ELEC', 'spec' => 'Embedded Systems',  'year' => '2025/2026', 'status' => 6, 'score' => null,  'visits' => 30],
+            ['title' => 'نظام مراقبة الطاقة الشمسية في المناطق النائية',         'dept' => 'ELEC', 'spec' => 'Embedded Systems',  'year' => '2025/2026', 'status' => 2, 'score' => null,  'visits' => 30],
             // Electronics Engineering — Digital Circuits
             ['title' => 'تصميم دائرة ترميز رقمي للإشارات الصوتية',               'dept' => 'ELEC', 'spec' => 'Digital Circuits',  'year' => '2023/2024', 'status' => 1, 'score' => 80.50, 'visits' => 45],
             ['title' => 'وحدة معالجة منطقية قابلة للبرمجة للتطبيقات الصناعية',  'dept' => 'ELEC', 'spec' => 'Digital Circuits',  'year' => '2024/2025', 'status' => 1, 'score' => null,  'visits' => 15],

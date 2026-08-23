@@ -3,7 +3,7 @@ import AssignExaminerModal from '@/components/AssignExaminerModal.vue';
 import ConfirmDelete from '@/components/ConfirmDelete.vue';
 import ScoreInput from '@/components/ScoreInput.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { isPendingApproval, statusColor, statusLabel } from '@/composables/useProjectStatus';
+import { isProposalStatus, statusColor, statusLabel } from '@/composables/useProjectStatus';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -64,7 +64,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 // ── Permissions ───────────────────────────────────────────────────
 const currentUser = computed(() => page.props.auth.user);
-const isPending    = computed(() => isPendingApproval(props.project.current_status?.status_name));
+const isPending    = computed(() => isProposalStatus(props.project.current_status?.status_name));
 const canManage    = computed(() => ['dept_manager', 'super_admin'].includes(userRole.value));
 
 const canModify = computed(() => {

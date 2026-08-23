@@ -4,7 +4,7 @@ import FilterPanel, { type FilterValues } from '@/components/FilterPanel.vue';
 import SearchBar from '@/components/SearchBar.vue';
 import SimilarityWarning from '@/components/SimilarityWarning.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { isPendingApproval, statusColor, statusLabel } from '@/composables/useProjectStatus';
+import { isProposalStatus, statusColor, statusLabel } from '@/composables/useProjectStatus';
 import { type BreadcrumbItem, type SharedData, type SimilarProject } from '@/types';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref } from 'vue';
@@ -196,7 +196,7 @@ function removeChip(key: Chip['key']) {
 
 function canModify(p: Project): boolean {
     if (userRole.value === 'super_admin') return true;
-    if (!isPendingApproval(p.current_status?.status_name)) return false;
+    if (!isProposalStatus(p.current_status?.status_name)) return false;
     const user = page.props.auth.user;
     if (userRole.value === 'dept_manager' && user.department_id === p.department_id) return true;
     return p.created_by === user.id && user.department_id === p.department_id;
@@ -213,7 +213,7 @@ function canDeleteProject(p: Project): boolean {
 function canArchive(p: Project): boolean {
     const user = page.props.auth.user;
     return userRole.value === 'super_admin'
-        || (userRole.value === 'dept_manager' && isPendingApproval(p.current_status?.status_name) && user.department_id === p.department_id);
+        || (userRole.value === 'dept_manager' && isProposalStatus(p.current_status?.status_name) && user.department_id === p.department_id);
 }
 
 // ── Actions ──────────────────────────────────────────────────────────

@@ -546,3 +546,32 @@ test('duplicate title projects both appear in search results', function () {
             ->has('projects.data', 2)
         );
 });
+
+// ── Status Rendering ─────────────────────────────────────────────────────────
+
+test('projects index never renders a status other than مقترح or مؤرشف', function () {
+    $deps = makeProjectDeps();
+
+    Project::factory()->create([
+        'department_id'     => $deps['dept']->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+    ]);
+    Project::factory()->create([
+        'department_id'     => $deps['dept']->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_ARCHIVED,
+    ]);
+
+    $this->actingAs(userWithRole('super_admin'))
+        ->get(route('projects.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Projects/Index')
+            ->where('projects.data', fn ($rows) => collect($rows)
+                ->pluck('current_status.status_name')
+                ->every(fn ($name) => in_array($name, ['مقترح', 'مؤرشف'], true)))
+        );
+});

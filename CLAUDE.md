@@ -85,8 +85,8 @@ in their place to support the creator-or-department-manager permission check abo
     truth, and `UpdateProjectRequest`/`DeleteProjectRequest`/`ArchiveProjectRequest` for where
     it's enforced.
 - Only milestone documents saved (not every draft)
-- dept_staff projects need dept_manager approval before publishing
-- Supervisor role = approval gates in lifecycle (no CRUD)
+- dept_staff projects stay مقترح (pending) until a dept_manager of that department archives them —
+  see the paper-approval bullet above for the full permission matrix
 - Max 10 concurrent users
 - Arabic RTL interface
 

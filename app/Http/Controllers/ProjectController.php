@@ -143,7 +143,9 @@ class ProjectController extends Controller
     {
         $project = Project::where('is_deleted', false)->findOrFail($id);
 
-        if (! $project->canBeModifiedBy(Auth::user())) {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if (! $project->canBeModifiedBy($user)) {
             abort(403);
         }
 

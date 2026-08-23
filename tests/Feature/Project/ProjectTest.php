@@ -151,50 +151,6 @@ test('project PDF cannot exceed 15MB', function () {
         ->assertSessionHasErrors('pdf_file');
 });
 
-// ── Approve ───────────────────────────────────────────────────────────────────
-
-test('dept_manager can archive pending project', function () {
-    $deps = makeProjectDeps();
-
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => 2,
-    ]);
-
-    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
-    $manager->assignRole('dept_manager');
-
-    $this->actingAs($manager)
-        ->post(route('projects.archive', $project->id))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', [
-        'id'                => $project->id,
-        'current_status_id' => 1,
-    ]);
-});
-
-test('dept_staff cannot archive project', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => 2,
-    ]);
-
-    $staff = User::factory()->create(['department_id' => $dept->id]);
-    $staff->assignRole('dept_staff');
-
-    $this->actingAs($staff)
-        ->post(route('projects.archive', $project->id))
-        ->assertForbidden();
-});
-
 // ── Archive ───────────────────────────────────────────────────────────────────
 
 test('dept_manager can archive a pending project in their own department', function () {
@@ -387,6 +343,51 @@ test('super_admin can replace an archived project details', function () {
         ->assertRedirect();
 
     $this->assertDatabaseHas('projects', ['id' => $project->id, 'project_title' => 'Admin Replaced']);
+});
+
+test('dept_staff cannot move a project to a different department via replace', function () {
+    $dept = Department::factory()->create();
+    $otherDept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $staff = User::factory()->create(['department_id' => $dept->id]);
+    $staff->assignRole('dept_staff');
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+        'created_by'        => $staff->id,
+    ]);
+
+    $this->actingAs($staff)
+        ->put(route('projects.update', $project->id), projectData($deps, ['department_id' => $otherDept->id]))
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'department_id' => $dept->id]);
+});
+
+test('super_admin can move a project to a different department via replace', function () {
+    $dept = Department::factory()->create();
+    $otherDept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $otherSpec = Specialization::factory()->create(['department_id' => $otherDept->id]);
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+    ]);
+
+    $this->actingAs(userWithRole('super_admin'))
+        ->put(route('projects.update', $project->id), projectData($deps, [
+            'department_id'     => $otherDept->id,
+            'specialization_id' => $otherSpec->id,
+        ]))
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'department_id' => $otherDept->id]);
 });
 
 test('creator can delete their own pending project', function () {

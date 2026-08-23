@@ -9,13 +9,29 @@ class UpdateProjectRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        $project = Project::where('is_deleted', false)->find($this->route('project'));
+        $id = $this->route('project');
 
-        if (! $project) {
-            return true; // let the controller's findOrFail produce a 404
+        if ($id === null) {
+            return false;
         }
 
-        return $project->canBeModifiedBy($this->user());
+        $project = Project::where('is_deleted', false)->find($id);
+
+        if (! $project) {
+            return true; // valid id, but not found / already deleted — let the controller's findOrFail produce a 404
+        }
+
+        if (! $project->canBeModifiedBy($this->user())) {
+            return false;
+        }
+
+        if (! $this->user()->hasRole('super_admin')
+            && (int) $this->input('department_id') !== $project->department_id
+        ) {
+            return false;
+        }
+
+        return true;
     }
 
     public function rules(): array

@@ -201,9 +201,13 @@ test('dept_manager can soft delete project', function () {
         'department_id'     => $deps['dept']->id,
         'specialization_id' => $deps['spec']->id,
         'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
     ]);
 
-    $this->actingAs(userWithRole('dept_manager'))
+    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
+    $manager->assignRole('dept_manager');
+
+    $this->actingAs($manager)
         ->delete(route('projects.destroy', $project->id))
         ->assertRedirect(route('projects.index'));
 
@@ -229,6 +233,125 @@ test('dept_staff cannot delete project', function () {
     $this->actingAs($staff)
         ->delete(route('projects.destroy', $project->id))
         ->assertForbidden();
+});
+
+// ── Replace / Delete Ownership Rules ─────────────────────────────────────────
+
+test('creator can replace their own pending project details', function () {
+    $dept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $staff = User::factory()->create(['department_id' => $dept->id]);
+    $staff->assignRole('dept_staff');
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+        'created_by'        => $staff->id,
+    ]);
+
+    $this->actingAs($staff)
+        ->put(route('projects.update', $project->id), projectData($deps, ['project_title' => 'Replaced Title']))
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'project_title' => 'Replaced Title']);
+});
+
+test('non-creator dept_staff cannot replace another staff member pending project', function () {
+    $dept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $creator = User::factory()->create(['department_id' => $dept->id]);
+    $otherStaff = User::factory()->create(['department_id' => $dept->id]);
+    $otherStaff->assignRole('dept_staff');
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+        'created_by'        => $creator->id,
+    ]);
+
+    $this->actingAs($otherStaff)
+        ->put(route('projects.update', $project->id), projectData($deps))
+        ->assertForbidden();
+});
+
+test('dept_manager cannot replace an archived project details', function () {
+    $dept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $manager = User::factory()->create(['department_id' => $dept->id]);
+    $manager->assignRole('dept_manager');
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_ARCHIVED,
+    ]);
+
+    $this->actingAs($manager)
+        ->put(route('projects.update', $project->id), projectData($deps))
+        ->assertForbidden();
+});
+
+test('super_admin can replace an archived project details', function () {
+    $dept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_ARCHIVED,
+    ]);
+
+    $this->actingAs(userWithRole('super_admin'))
+        ->put(route('projects.update', $project->id), projectData($deps, ['project_title' => 'Admin Replaced']))
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'project_title' => 'Admin Replaced']);
+});
+
+test('creator can delete their own pending project', function () {
+    $dept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $staff = User::factory()->create(['department_id' => $dept->id]);
+    $staff->assignRole('dept_staff');
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+        'created_by'        => $staff->id,
+    ]);
+
+    $this->actingAs($staff)
+        ->delete(route('projects.destroy', $project->id))
+        ->assertRedirect(route('projects.index'));
+
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'is_deleted' => true]);
+});
+
+test('dept_manager cannot delete an archived project', function () {
+    $dept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $manager = User::factory()->create(['department_id' => $dept->id]);
+    $manager->assignRole('dept_manager');
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_ARCHIVED,
+    ]);
+
+    $this->actingAs($manager)
+        ->delete(route('projects.destroy', $project->id))
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'is_deleted' => false]);
 });
 
 // ── Visit Count ───────────────────────────────────────────────────────────────

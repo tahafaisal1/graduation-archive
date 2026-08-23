@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\DeleteProjectRequest;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
 use App\Models\Department;
@@ -141,7 +142,9 @@ class ProjectController extends Controller
     {
         $project = Project::where('is_deleted', false)->findOrFail($id);
 
-        $this->authorizeEdit($project);
+        if (! $project->canBeModifiedBy(Auth::user())) {
+            abort(403);
+        }
 
         return Inertia::render('Projects/Edit', [
             'project'         => $project->load(['students', 'documents']),
@@ -154,8 +157,6 @@ class ProjectController extends Controller
     public function update(UpdateProjectRequest $request, int $id): RedirectResponse
     {
         $project = Project::where('is_deleted', false)->findOrFail($id);
-
-        $this->authorizeEdit($project);
 
         $data    = $request->validated();
         $similar = $this->search->detectSimilarity($data['project_title'], $id);
@@ -207,15 +208,9 @@ class ProjectController extends Controller
         return $redirect;
     }
 
-    public function destroy(int $id): RedirectResponse
+    public function destroy(DeleteProjectRequest $request, int $id): RedirectResponse
     {
         $project = Project::where('is_deleted', false)->findOrFail($id);
-
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
-        if (! $user->hasAnyRole(['dept_manager', 'super_admin'])) {
-            abort(403);
-        }
 
         $project->update(['is_deleted' => true]);
 
@@ -230,29 +225,5 @@ class ProjectController extends Controller
         $project->update(['current_status_id' => Project::STATUS_ARCHIVED]);
 
         return back()->with('success', 'تم اعتماد المشروع بنجاح');
-    }
-
-    private function authorizeEdit(Project $project): void
-    {
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
-
-        if ($user->hasRole('super_admin')) {
-            return;
-        }
-
-        if ($user->hasRole('dept_manager') && $project->department_id === $user->department_id) {
-            return;
-        }
-
-        // dept_staff may edit only pending projects within their own department
-        if ($user->hasRole('dept_staff')
-            && $project->current_status_id === Project::STATUS_PENDING
-            && $project->department_id === $user->department_id
-        ) {
-            return;
-        }
-
-        abort(403);
     }
 }

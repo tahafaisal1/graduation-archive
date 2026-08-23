@@ -2,13 +2,20 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateProjectRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->hasAnyRole(['dept_staff', 'dept_manager', 'super_admin']);
+        $project = Project::where('is_deleted', false)->find($this->route('project'));
+
+        if (! $project) {
+            return true; // let the controller's findOrFail produce a 404
+        }
+
+        return $project->canBeModifiedBy($this->user());
     }
 
     public function rules(): array

@@ -42,24 +42,26 @@ function managerInDept(int $deptId): User
     return $u;
 }
 
-function pendingRvProject(int $deptId, int $specId, int $supervisorId): Project
+function pendingRvProject(int $deptId, int $specId, int $supervisorId, ?int $createdBy = null): Project
 {
     return Project::factory()->create([
         'department_id'     => $deptId,
         'specialization_id' => $specId,
         'supervisor_id'     => $supervisorId,
         'current_status_id' => 2, // proposal_submitted
+        'created_by'        => $createdBy,
         'is_deleted'        => false,
     ]);
 }
 
-function archivedRvProject(int $deptId, int $specId, int $supervisorId): Project
+function archivedRvProject(int $deptId, int $specId, int $supervisorId, ?int $createdBy = null): Project
 {
     return Project::factory()->create([
         'department_id'     => $deptId,
         'specialization_id' => $specId,
         'supervisor_id'     => $supervisorId,
         'current_status_id' => 1, // archived
+        'created_by'        => $createdBy,
         'is_deleted'        => false,
     ]);
 }
@@ -222,9 +224,9 @@ test('dept_manager can approve a pending project', function () {
     $this->assertDatabaseHas('projects', ['id' => $project->id, 'current_status_id' => 1]);
 });
 
-test('dept_manager can soft-delete a project', function () {
+test('dept_manager can soft-delete a pending project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = archivedRvProject($dept->id, $spec->id, $sv->id);
+    $project = pendingRvProject($dept->id, $spec->id, $sv->id);
     $mgr     = managerInDept($dept->id);
 
     $this->actingAs($mgr)
@@ -472,8 +474,8 @@ test('dept_staff can create project in their own department', function () {
 
 test('dept_staff can edit their own pending project in same department', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = pendingRvProject($dept->id, $spec->id, $sv->id);
     $staff   = staffInDept($dept->id);
+    $project = pendingRvProject($dept->id, $spec->id, $sv->id, $staff->id);
 
     $this->actingAs($staff)
         ->get(route('projects.edit', $project->id))

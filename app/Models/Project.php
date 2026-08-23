@@ -12,6 +12,9 @@ class Project extends Model
 {
     use HasFactory;
 
+    public const STATUS_ARCHIVED = 1;
+    public const STATUS_PENDING  = 2;
+
     protected $fillable = [
         'project_title',
         'description',
@@ -20,6 +23,7 @@ class Project extends Model
         'specialization_id',
         'supervisor_id',
         'current_status_id',
+        'created_by',
         'based_on_project_id',
         'draft_file_path',
         'final_score',
@@ -50,6 +54,11 @@ class Project extends Model
         return $this->belongsTo(User::class, 'supervisor_id');
     }
 
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
     public function currentStatus(): BelongsTo
     {
         return $this->belongsTo(ProjectStatus::class, 'current_status_id');
@@ -58,6 +67,34 @@ class Project extends Model
     public function basedOn(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'based_on_project_id');
+    }
+
+    public function canBeModifiedBy(User $user): bool
+    {
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        if ($this->current_status_id !== self::STATUS_PENDING) {
+            return false;
+        }
+
+        if ($user->hasRole('dept_manager') && $user->department_id === $this->department_id) {
+            return true;
+        }
+
+        return $this->created_by === $user->id && $user->department_id === $this->department_id;
+    }
+
+    public function canBeArchivedBy(User $user): bool
+    {
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        return $user->hasRole('dept_manager')
+            && $user->department_id === $this->department_id
+            && $this->current_status_id === self::STATUS_PENDING;
     }
 
     public function students(): HasMany

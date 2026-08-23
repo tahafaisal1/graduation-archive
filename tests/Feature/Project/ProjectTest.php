@@ -115,6 +115,20 @@ test('dept_staff cannot create project in other department', function () {
         ->assertForbidden();
 });
 
+test('created project records the creating user as created_by', function () {
+    $deps = makeProjectDeps();
+    $manager = userWithRole('dept_manager');
+
+    $this->actingAs($manager)
+        ->post(route('projects.store'), projectData($deps))
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('projects', [
+        'project_title' => 'Test Project Title',
+        'created_by'    => $manager->id,
+    ]);
+});
+
 // ── PDF Validation ────────────────────────────────────────────────────────────
 
 test('project rejects non-PDF uploaded file', function () {

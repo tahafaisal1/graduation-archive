@@ -19,9 +19,6 @@ use Inertia\Response;
 
 class ProjectController extends Controller
 {
-    private const STATUS_ARCHIVED = 1; // archived — published in archive
-    private const STATUS_PENDING  = 2; // proposal_submitted — awaiting dept_manager approval
-
     public function __construct(private readonly SearchService $search) {}
 
     public function index(Request $request): Response
@@ -67,8 +64,8 @@ class ProjectController extends Controller
         /** @var \App\Models\User $user */
         $user     = Auth::user();
         $statusId = $user->hasAnyRole(['dept_manager', 'super_admin'])
-            ? self::STATUS_ARCHIVED
-            : self::STATUS_PENDING;
+            ? Project::STATUS_ARCHIVED
+            : Project::STATUS_PENDING;
 
         $project = Project::create([
             'project_title'     => $data['project_title'],
@@ -78,6 +75,7 @@ class ProjectController extends Controller
             'specialization_id' => $data['specialization_id'],
             'supervisor_id'     => $data['supervisor_id'],
             'current_status_id' => $statusId,
+            'created_by'        => $user->id,
             'draft_file_path'   => $pdfPath,
             'is_deleted'        => false,
         ]);
@@ -94,7 +92,7 @@ class ProjectController extends Controller
             $project->documents()->create([
                 'document_type' => 'final_report',
                 'file_path'     => $pdfPath,
-                'is_final'      => $statusId === self::STATUS_ARCHIVED,
+                'is_final'      => $statusId === Project::STATUS_ARCHIVED,
             ]);
         }
 
@@ -172,7 +170,7 @@ class ProjectController extends Controller
             $project->documents()->create([
                 'document_type' => 'final_report',
                 'file_path'     => $pdfPath,
-                'is_final'      => $project->current_status_id === self::STATUS_ARCHIVED,
+                'is_final'      => $project->current_status_id === Project::STATUS_ARCHIVED,
             ]);
         }
 
@@ -229,7 +227,7 @@ class ProjectController extends Controller
     {
         $project = Project::where('is_deleted', false)->findOrFail($id);
 
-        $project->update(['current_status_id' => self::STATUS_ARCHIVED]);
+        $project->update(['current_status_id' => Project::STATUS_ARCHIVED]);
 
         return back()->with('success', 'تم اعتماد المشروع بنجاح');
     }
@@ -249,7 +247,7 @@ class ProjectController extends Controller
 
         // dept_staff may edit only pending projects within their own department
         if ($user->hasRole('dept_staff')
-            && $project->current_status_id === self::STATUS_PENDING
+            && $project->current_status_id === Project::STATUS_PENDING
             && $project->department_id === $user->department_id
         ) {
             return;

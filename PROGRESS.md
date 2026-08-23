@@ -29,6 +29,19 @@
 | UI Primitives | radix-vue | ^1.9.11 |
 | Route helpers | ziggy-js | ^2.4.2 |
 
+### Bugfixes / Corrections
+
+- **2026-08-24 — Ghost "في انتظار الموافقة" status badge removed.** Root cause:
+  `resources/js/composables/useProjectStatus.ts` still labeled the "مقترح" status as
+  "في انتظار الموافقة" (yellow), a leftover from before the system moved to paper-based approval.
+  Confirmed via direct DB query that no stale data was involved — `project_status` has exactly 2
+  rows (`مؤرشف`, `مقترح`) and all 25 seeded projects reference one of them. Backend authorization
+  (`Project::canBeModifiedBy()`/`canBeArchivedBy()`, the three project FormRequests,
+  `ProjectController::edit()`) and `Projects/Show.vue` were already fully correct for the 2-status/
+  paper-approval model — only the frontend label/color map and one dashboard stat card title
+  needed fixing. `isPendingApproval()` renamed to `isProposalStatus()` throughout
+  `Projects/Index.vue` and `Projects/Show.vue`.
+
 ### Current Development Phase and Status
 
 **Phase 1 Complete** — All planned Phase 1 features have been implemented and tested. The full test suite passes at 208/218 (10 pre-existing failures due to ext-zip disabled in XAMPP environment).

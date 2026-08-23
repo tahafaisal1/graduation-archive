@@ -135,6 +135,18 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - Max upload: 15MB PDF only
 
 ## Current Status
+- 🐛 **Bugfix — Ghost "في انتظار الموافقة" status badge** — the prior Paper-Approval Proposal
+  Lifecycle change (below) updated the DB, backend authorization, and both Vue pages to the
+  2-status model, but missed `resources/js/composables/useProjectStatus.ts`, which still mapped
+  the "مقترح" status to the display label "في انتظار الموافقة" (yellow) instead of "مقترح" (blue).
+  This produced a third, non-existent status badge in production even though only 2 statuses have
+  ever existed in the DB (confirmed via direct query: `project_status` has exactly 2 rows, all 25
+  seeded projects reference a valid `current_status_id`). Fixed the label/color map and renamed
+  `isPendingApproval()` → `isProposalStatus()` (no digital "approval" concept exists — see the
+  paper-approval bullet above). Also removed the same "awaiting approval" phrase from the
+  super_admin dashboard's stat card title (`resources/js/pages/Dashboard.vue`), which counted
+  "مقترح" projects but labeled them as "awaiting approval". **"في انتظار الموافقة" is not a valid
+  system state — it must never appear anywhere in the UI.**
 - ✅ Paper-Approval Proposal Lifecycle — 238/238 total suite (0 failures)
   - Migration `2026_08_23_120000_drop_approval_gate_columns_from_projects_table.php` — drops
     supervisor_approved_by/_at, department_approved_by/_at (never referenced outside the model

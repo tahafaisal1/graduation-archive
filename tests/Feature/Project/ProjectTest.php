@@ -244,7 +244,10 @@ test('cannot archive an already-archived project', function () {
         'current_status_id' => Project::STATUS_ARCHIVED,
     ]);
 
-    $this->actingAs(userWithRole('dept_manager'))
+    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
+    $manager->assignRole('dept_manager');
+
+    $this->actingAs($manager)
         ->post(route('projects.archive', $project->id))
         ->assertForbidden();
 });

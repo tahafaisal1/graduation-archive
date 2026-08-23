@@ -448,7 +448,7 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 | edit() | GET /projects/{id}/edit | id | authorizeEdit() check; passes form data | Inertia: Projects/Edit | auth (role check in method) |
 | update() | PUT /projects/{id} | UpdateProjectRequest | authorizeEdit(); replaces PDF if provided; replaces students; detectSimilarity flash | Redirect to show | auth (role check in method) |
 | destroy() | DELETE /projects/{id} | id | Only dept_manager/super_admin; sets is_deleted=true | Redirect to index | dept_manager, super_admin |
-| approve() | POST /projects/{id}/approve | id | Sets current_status_id=1 (archived) | Redirect back | dept_manager, super_admin |
+| archive() | POST /projects/{id}/archive | ArchiveProjectRequest, id | Sets current_status_id=1 (archived) | Redirect back | dept_manager of that project's department while current_status_id=2 (مقترح), or super_admin — see `ArchiveProjectRequest::authorize()` / `Project::canBeArchivedBy()` |
 
 **Private method `authorizeEdit(Project $project)`:** super_admin may edit any; dept_manager may edit within own dept; dept_staff may only edit pending (status_id=2) projects in own dept; otherwise abort 403.
 
@@ -589,7 +589,7 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 | GET | /projects/{project}/edit | ProjectController@edit | auth | All authenticated (role checked in controller) |
 | PUT | /projects/{project} | ProjectController@update | auth | All authenticated (role checked in controller) |
 | DELETE | /projects/{project} | ProjectController@destroy | auth | dept_manager, super_admin (checked in method) |
-| POST | /projects/{id}/approve | ProjectController@approve | auth, role:dept_manager,super_admin | dept_manager, super_admin |
+| POST | /projects/{id}/archive | ProjectController@archive | auth (role: middleware removed — authorization now lives entirely in ArchiveProjectRequest) | dept_manager of that project's department while pending, or super_admin |
 | GET | /search | SearchController@index | auth | All authenticated |
 | GET | /search/suggestions | SearchController@suggestions | auth | All authenticated |
 | GET | /departments/create | DepartmentController@create | auth, role:super_admin | super_admin |
@@ -1169,7 +1169,7 @@ Base test case extending Laravel's base TestCase.
 
 ### tests/Feature/Project/ProjectTest.php
 
-- **Purpose:** Full project lifecycle: create, store with status, approve, soft delete, visit count, search/filter, similarity detection
+- **Purpose:** Full project lifecycle: create, store with status, archive, soft delete, visit count, search/filter, similarity detection
 - **14 test methods:**
   - super_admin can view all projects
   - dept_manager creates project (status=archived)
@@ -1177,8 +1177,8 @@ Base test case extending Laravel's base TestCase.
   - dept_staff cannot create project in other dept (403)
   - Non-PDF file rejected (validation error)
   - PDF > 15MB rejected (validation error)
-  - dept_manager can approve pending project
-  - dept_staff cannot approve project (403)
+  - dept_manager can archive pending project
+  - dept_staff cannot archive project
   - dept_manager can soft delete project (is_deleted=true)
   - dept_staff cannot delete project (403)
   - Visit count increments on each show() call
@@ -1320,7 +1320,7 @@ Base test case extending Laravel's base TestCase.
 - StoreProjectRequest and UpdateProjectRequest with PDF validation (mime:pdf, max 15MB)
 - ProjectController: 8 methods
 - Status auto-assignment: dept_manager/super_admin -> archived; dept_staff -> proposal_submitted
-- approve() endpoint changes status to archived
+- archive() endpoint changes status to archived — now guarded to dept_manager of that project's department while pending (مقترح), or super_admin (see `Project::canBeArchivedBy()`)
 - Soft delete via is_deleted=true (not deleted_at)
 - PDF stored in storage/public/projects; ProjectDocument record created on upload
 - authorizeEdit() private method enforces role/dept/status rules

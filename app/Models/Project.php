@@ -25,10 +25,6 @@ class Project extends Model
         'final_score',
         'visit_count',
         'is_deleted',
-        'supervisor_approved_by',
-        'supervisor_approved_at',
-        'department_approved_by',
-        'department_approved_at',
     ];
 
     protected function casts(): array
@@ -36,8 +32,6 @@ class Project extends Model
         return [
             'is_deleted'              => 'boolean',
             'final_score'             => 'decimal:2',
-            'supervisor_approved_at'  => 'datetime',
-            'department_approved_at'  => 'datetime',
         ];
     }
 
@@ -64,26 +58,6 @@ class Project extends Model
     public function basedOn(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'based_on_project_id');
-    }
-
-    public function supervisorApprovedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'supervisor_approved_by');
-    }
-
-    public function departmentApprovedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'department_approved_by');
-    }
-
-    public function isSupervisorApproved(): bool
-    {
-        return $this->supervisor_approved_at !== null;
-    }
-
-    public function isDepartmentApproved(): bool
-    {
-        return $this->department_approved_at !== null;
     }
 
     public function students(): HasMany

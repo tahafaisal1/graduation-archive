@@ -109,7 +109,7 @@ const reportLinks = [
                         color="purple"
                     />
                     <StatsCard
-                        title="في انتظار الموافقة"
+                        title="مشاريع مقترحة"
                         :value="stats.pending_approvals ?? 0"
                         :icon="Clock"
                         color="orange"

@@ -9,7 +9,7 @@ use App\Models\User;
 
 class ReportService
 {
-    private const STATUS_PROPOSAL = 2; // proposal_submitted — awaiting dept_manager approval
+    private const STATUS_PROPOSAL = 2; // مقترح — see Project::STATUS_PENDING
 
     public function getDashboardStats(): array
     {

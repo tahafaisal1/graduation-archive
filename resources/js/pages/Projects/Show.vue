@@ -35,6 +35,8 @@ interface Project {
     draft_file_path: string | null;
     final_score: string | null;
     visit_count: number;
+    created_by: number | null;
+    department_id: number;
     department: Department | null;
     specialization: Specialization | null;
     supervisor: Supervisor | null;
@@ -61,12 +63,23 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 // ── Permissions ───────────────────────────────────────────────────
-const canEdit   = computed(() => ['dept_staff', 'dept_manager', 'super_admin'].includes(userRole.value));
-const canDelete = computed(() => ['dept_manager', 'super_admin'].includes(userRole.value));
-const canManage = computed(() => ['dept_manager', 'super_admin'].includes(userRole.value));
-const canApprove = computed(() =>
-    ['dept_manager', 'super_admin'].includes(userRole.value)
-    && isPendingApproval(props.project.current_status?.status_name)
+const currentUser = computed(() => page.props.auth.user);
+const isPending    = computed(() => isPendingApproval(props.project.current_status?.status_name));
+const canManage    = computed(() => ['dept_manager', 'super_admin'].includes(userRole.value));
+
+const canModify = computed(() => {
+    if (userRole.value === 'super_admin') return true;
+    if (!isPending.value) return false;
+    if (userRole.value === 'dept_manager' && currentUser.value.department_id === props.project.department_id) return true;
+    return props.project.created_by === currentUser.value.id && currentUser.value.department_id === props.project.department_id;
+});
+
+const canReplace = canModify;
+const canDelete  = canModify;
+
+const canArchive = computed(() =>
+    userRole.value === 'super_admin'
+    || (userRole.value === 'dept_manager' && isPending.value && currentUser.value.department_id === props.project.department_id)
 );
 
 // ── Project actions ────────────────────────────────────────────────
@@ -78,8 +91,8 @@ function deleteProject() {
     });
 }
 
-function approveProject() {
-    router.post(route('projects.approve', [props.project.id]));
+function archiveProject() {
+    router.post(route('projects.archive', [props.project.id]));
 }
 
 // ── Examiner assign / remove ───────────────────────────────────────
@@ -163,15 +176,15 @@ const studentStatusLabel: Record<string, string> = {
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <button
-                        v-if="canApprove"
+                        v-if="canArchive"
                         type="button"
                         class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                        @click="approveProject"
+                        @click="archiveProject"
                     >
-                        اعتماد المشروع
+                        أرشفة المشروع
                     </button>
                     <a
-                        v-if="canEdit"
+                        v-if="canReplace"
                         :href="route('projects.edit', [project.id])"
                         class="rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-600"
                     >

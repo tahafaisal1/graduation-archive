@@ -20,6 +20,8 @@ interface Project {
     id: number;
     project_title: string;
     academic_year: string;
+    created_by: number | null;
+    department_id: number;
     department: Department | null;
     specialization: Specialization | null;
     supervisor: Supervisor | null;
@@ -68,7 +70,6 @@ const flash    = computed(() => page.props.flash ?? {});
 const userRole = computed(() => (page.props.auth.user as { role?: string }).role ?? '');
 
 const canCreate = computed(() => ['dept_staff', 'dept_manager', 'super_admin'].includes(userRole.value));
-const canDelete = computed(() => ['dept_manager', 'super_admin'].includes(userRole.value));
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'لوحة التحكم', href: '/dashboard' },
@@ -193,13 +194,26 @@ function removeChip(key: Chip['key']) {
 
 // ── Row permissions ──────────────────────────────────────────────────
 
-function canEdit(_p: Project) {
-    return ['dept_staff', 'dept_manager', 'super_admin'].includes(userRole.value);
+function canModify(p: Project): boolean {
+    if (userRole.value === 'super_admin') return true;
+    if (!isPendingApproval(p.current_status?.status_name)) return false;
+    const user = page.props.auth.user;
+    if (userRole.value === 'dept_manager' && user.department_id === p.department_id) return true;
+    return p.created_by === user.id && user.department_id === p.department_id;
 }
 
-function canApprove(p: Project) {
-    return ['dept_manager', 'super_admin'].includes(userRole.value)
-        && isPendingApproval(p.current_status?.status_name);
+function canReplace(p: Project): boolean {
+    return canModify(p);
+}
+
+function canDeleteProject(p: Project): boolean {
+    return canModify(p);
+}
+
+function canArchive(p: Project): boolean {
+    const user = page.props.auth.user;
+    return userRole.value === 'super_admin'
+        || (userRole.value === 'dept_manager' && isPendingApproval(p.current_status?.status_name) && user.department_id === p.department_id);
 }
 
 // ── Actions ──────────────────────────────────────────────────────────
@@ -213,8 +227,8 @@ function deleteProject() {
     });
 }
 
-function approveProject(id: number) {
-    router.post(route('projects.approve', [id]));
+function archiveProject(id: number) {
+    router.post(route('projects.archive', [id]));
 }
 
 // ── Status helpers now come from @/composables/useProjectStatus ──────
@@ -371,22 +385,22 @@ function approveProject(id: number) {
                                         عرض
                                     </a>
                                     <a
-                                        v-if="canEdit(project)"
+                                        v-if="canReplace(project)"
                                         :href="route('projects.edit', [project.id])"
                                         class="rounded bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400"
                                     >
                                         تعديل
                                     </a>
                                     <button
-                                        v-if="canApprove(project)"
+                                        v-if="canArchive(project)"
                                         type="button"
                                         class="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400"
-                                        @click="approveProject(project.id)"
+                                        @click="archiveProject(project.id)"
                                     >
-                                        اعتماد
+                                        أرشفة
                                     </button>
                                     <button
-                                        v-if="canDelete"
+                                        v-if="canDeleteProject(project)"
                                         type="button"
                                         class="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/20 dark:text-red-400"
                                         @click="confirmDelete = project"

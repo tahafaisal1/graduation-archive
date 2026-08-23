@@ -147,8 +147,9 @@ only the Arabic text and sort_order changed. The original 8 Phase-2 placeholder 
 (supervisor_approved, hod_approved, in_progress, ready_for_defense, under_defense,
 revisions_required, rejected, cancelled) are removed — they were never referenced by any
 controller, service, or Vue component (confirmed by codebase-wide audit), only present in
-seed data. Supervisor and department approval are now tracked as fields on `projects` (see
-below), not as separate lifecycle statuses.
+seed data. Supervisor and department approval happen on paper, outside the system (updated
+2026-08-23) — there is no digital approval tracking; see the `projects` table note below for
+what replaced the short-lived `supervisor_approved_by/_at`/`department_approved_by/_at` fields.
 
 ### Table: projects
 
@@ -162,10 +163,7 @@ below), not as separate lifecycle statuses.
 | specialization_id | bigint unsigned, FK | No | — | FK to specializations.id |
 | supervisor_id | bigint unsigned, FK | No | — | FK to users.id |
 | current_status_id | tinyint unsigned, FK | No | — | FK to project_status.id |
-| supervisor_approved_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — added 2026-08-17 |
-| supervisor_approved_at | timestamp | Yes | null | Supervisor approval gate — added 2026-08-17 |
-| department_approved_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — added 2026-08-17 |
-| department_approved_at | timestamp | Yes | null | Department approval gate — added 2026-08-17 |
+| created_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — added 2026-08-23; set from auth()->id() in ProjectController::store() |
 | based_on_project_id | bigint unsigned, FK | Yes | null | FK to projects.id (nullOnDelete) — evolution link |
 | draft_file_path | varchar(255) | Yes | null | Path to uploaded PDF in public storage |
 | final_score | decimal(5,2) | Yes | null | Final score out of 100 |
@@ -174,12 +172,20 @@ below), not as separate lifecycle statuses.
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `current_status_id` to project_status.id, `supervisor_approved_by`/`department_approved_by` to users.id (nullOnDelete), `based_on_project_id` to projects.id (self-referential, nullOnDelete).
+**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `current_status_id` to project_status.id, `created_by` to users.id (nullOnDelete), `based_on_project_id` to projects.id (self-referential, nullOnDelete).
 
 Note: `project_documents` (milestone document tracking) already existed prior to this change and
 remains fully in scope — it is unrelated to the removed lifecycle statuses. STATUS_HISTORY and
 DEFENSE tables were audited codebase-wide and confirmed to have never been implemented (planning
 docs only, no migration/model/controller) — nothing was removed because nothing existed.
+
+Note (2026-08-23): `supervisor_approved_by/_at` and `department_approved_by/_at` (added 2026-08-17)
+were dropped by migration `2026_08_23_120000_drop_approval_gate_columns_from_projects_table.php`
+— approval turned out to happen on paper, outside the system, so the fields tracked nothing any
+controller or UI ever read. Migration `2026_08_23_120100_add_created_by_to_projects_table.php`
+added `created_by` in their place, to support the creator-or-department-manager permission check
+described in CLAUDE.md's "Key Business Rules" and enforced by `Project::canBeModifiedBy()`/
+`canBeArchivedBy()`.
 
 ### Table: project_students
 
@@ -299,23 +305,29 @@ docs only, no migration/model/controller) — nothing was removed because nothin
 
 - **Table:** projects
 - **Traits:** HasFactory
-- **Fillable:** project_title, description, academic_year, department_id, specialization_id, supervisor_id, current_status_id, based_on_project_id, draft_file_path, final_score, visit_count, is_deleted, supervisor_approved_by, supervisor_approved_at, department_approved_by, department_approved_at
-- **Casts:** is_deleted (boolean), final_score (decimal:2), supervisor_approved_at (datetime), department_approved_at (datetime)
+- **Constants:** `STATUS_ARCHIVED = 1`, `STATUS_PENDING = 2` (added 2026-08-23 — single source of
+  truth for the two lifecycle status IDs, replacing private copies previously duplicated in
+  ProjectController)
+- **Fillable:** project_title, description, academic_year, department_id, specialization_id, supervisor_id, current_status_id, created_by, based_on_project_id, draft_file_path, final_score, visit_count, is_deleted
+- **Casts:** is_deleted (boolean), final_score (decimal:2)
 - **Relationships:**
   - `department()` — BelongsTo(Department)
   - `specialization()` — BelongsTo(Specialization)
   - `supervisor()` — BelongsTo(User), FK: supervisor_id
+  - `createdBy()` — BelongsTo(User), FK: created_by — added 2026-08-23
   - `currentStatus()` — BelongsTo(ProjectStatus), FK: current_status_id
   - `basedOn()` — BelongsTo(Project), FK: based_on_project_id (self-referential)
-  - `supervisorApprovedBy()` — BelongsTo(User), FK: supervisor_approved_by — added 2026-08-17
-  - `departmentApprovedBy()` — BelongsTo(User), FK: department_approved_by — added 2026-08-17
   - `students()` — HasMany(ProjectStudent)
   - `documents()` — HasMany(ProjectDocument)
   - `evaluations()` — HasMany(Evaluation)
   - `examiners()` — BelongsToMany(Examiner, pivot: project_examiners), using ProjectExaminer pivot model, withPivot('assigned_by'), withTimestamps()
-- **Helper methods (added 2026-08-17):**
-  - `isSupervisorApproved(): bool` — true when `supervisor_approved_at` is non-null
-  - `isDepartmentApproved(): bool` — true when `department_approved_at` is non-null
+- **Permission methods (added 2026-08-23, replacing the removed `isSupervisorApproved()`/`isDepartmentApproved()` approval-gate helpers):**
+  - `canBeModifiedBy(User $user): bool` — true for super_admin unconditionally; otherwise requires
+    `current_status_id === STATUS_PENDING` AND (dept_manager of this project's department, OR the
+    creator (`created_by === $user->id`) also in this project's department). Backs replace/delete.
+  - `canBeArchivedBy(User $user): bool` — true for super_admin unconditionally; otherwise requires
+    dept_manager of this project's department AND `current_status_id === STATUS_PENDING` (guards
+    against re-archiving an already-archived project).
 
 ### app/Models/ProjectStatus.php
 

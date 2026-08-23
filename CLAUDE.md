@@ -51,6 +51,11 @@ Phase 2 (Future):
 Note: the project lifecycle has been scoped down to 2 statuses (see "Key Business Rules" below).
 DEFENSE and STATUS_HISTORY were never implemented — planning-only, now removed from scope entirely.
 
+`supervisor_approved_by/_at` and `department_approved_by/_at` (added 2026-08-17) were removed on
+2026-08-23 — approval turned out to happen on paper, outside the system, so the fields tracked
+nothing any controller or UI ever read. `projects.created_by` (FK to users, nullable) was added
+in their place to support the creator-or-department-manager permission check above.
+
 ## Roles (RBAC via Spatie)
 1. super_admin — full access
 2. dept_manager — manage own department
@@ -68,10 +73,17 @@ DEFENSE and STATUS_HISTORY were never implemented — planning-only, now removed
   IDs kept as originally seeded (id=1 already meant "archived" everywhere in the codebase —
   ProjectController, PublicController, SearchService, ReportService, ProjectsImport — so only
   the seeded Arabic text/sort_order changed, not which ID means what).
-- Two approval gates — supervisor approval and department approval — are tracked as fields on
-  `projects` (`supervisor_approved_by/_at`, `department_approved_by/_at`), not as separate
-  lifecycle statuses. Both nullable; `Project::isSupervisorApproved()`/`isDepartmentApproved()`
-  check the `_at` timestamp.
+- Supervisor and department approval happen on paper, outside the system — there is no digital
+  approval tracking. A project created by dept_manager/dept_staff is implicitly pre-approved by
+  their role; the system's only job is to gate what can happen to it while it's مقترح (pending):
+  - Replace details/file or soft-delete: only the creator (`projects.created_by`) or the
+    dept_manager of that department, and only while current_status_id = 2 (مقترح). super_admin
+    bypasses both the status and ownership checks.
+  - Archive (مقترح → مؤرشف): only a dept_manager of that same department (or super_admin), only
+    while current_status_id = 2. Once مؤرشف, replace/delete are locked for everyone except
+    super_admin. See `Project::canBeModifiedBy()`/`canBeArchivedBy()` for the single source of
+    truth, and `UpdateProjectRequest`/`DeleteProjectRequest`/`ArchiveProjectRequest` for where
+    it's enforced.
 - Only milestone documents saved (not every draft)
 - dept_staff projects need dept_manager approval before publishing
 - Supervisor role = approval gates in lifecycle (no CRUD)
@@ -123,6 +135,33 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - Max upload: 15MB PDF only
 
 ## Current Status
+- ✅ Paper-Approval Proposal Lifecycle — 238/238 total suite (0 failures)
+  - Migration `2026_08_23_120000_drop_approval_gate_columns_from_projects_table.php` — drops
+    supervisor_approved_by/_at, department_approved_by/_at (never referenced outside the model
+    and a since-deleted test — approval is paper-based, not tracked digitally)
+  - Migration `2026_08_23_120100_add_created_by_to_projects_table.php` — adds nullable
+    created_by FK to users; set from auth()->id() in ProjectController::store()
+  - Project model — STATUS_ARCHIVED/STATUS_PENDING public constants (single source of truth,
+    replacing the private copies in ProjectController); canBeModifiedBy()/canBeArchivedBy()
+    encode the full permission matrix once, used by both FormRequests and the edit() gate
+  - UpdateProjectRequest/new DeleteProjectRequest/new ArchiveProjectRequest — replace/delete
+    locked to current_status_id=2 (مقترح) + creator-or-dept_manager-of-that-department;
+    archive locked to dept_manager-of-that-department + مقترح status (idempotency guard against
+    re-archiving); super_admin bypasses every check
+  - ProjectController::approve() renamed to archive() (route projects.approve → projects.archive)
+    — "approve" no longer describes any digital action now that approval is paper-based
+  - Projects/Show.vue + Index.vue — canReplace/canDeleteProject/canArchive are now ownership-
+    and status-aware (created_by + department_id + current_status_id), replacing the old blanket
+    role-only canEdit/canDelete/canApprove; archive button relabelled أرشفة (was اعتماد)
+  - Fixed two latent bugs found in the same pass: dept_manager could previously archive another
+    department's pending project (no dept scoping on the old approve route), and dept_manager
+    could edit/delete an already-archived project in their own department (no status lock at all)
+  - tests/Feature/Models/ProjectModelTest.php — 9 new tests for canBeModifiedBy()/canBeArchivedBy()
+  - tests/Feature/Project/ProjectTest.php — 11 new tests covering the full create/replace/
+    delete/archive permission matrix
+  - tests/Feature/Roles/RoleVerificationTest.php — updated 2 fixtures whose old expectations
+    (dept_manager deleting an archived project; dept_staff editing a project with no created_by
+    set) were superseded by the new rules; renamed projects.approve references to projects.archive
 - ✅ Project Lifecycle Scope-Down — 220/220 total suite (0 failures; the 10 previously-noted ext-zip failures no longer reproduce in this environment)
   - Migration `2026_08_17_220723_add_approval_gates_to_projects_table.php` — adds nullable `supervisor_approved_by`/`supervisor_approved_at`/`department_approved_by`/`department_approved_at` to `projects` (FKs nullOnDelete to users); original `projects`/`project_status` migrations untouched
   - ProjectStatusSeeder — narrowed from 10 rows to exactly 2: id=1 "مؤرشف" (archived, sort_order=2), id=2 "مقترح" (proposal, sort_order=1). IDs kept as originally seeded — id=1 already meant "archived" everywhere (ProjectController, PublicController, SearchService, ReportService, ProjectsImport) — only the Arabic text/sort_order changed, avoiding a much larger, riskier flip of existing business logic

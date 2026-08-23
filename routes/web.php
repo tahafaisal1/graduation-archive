@@ -78,9 +78,8 @@ Route::middleware(['auth', 'role:super_admin,dept_manager'])->group(function () 
 // Projects — all authenticated users can browse; role checks handled in controller/form requests
 Route::middleware(['auth'])->group(function () {
     Route::resource('projects', ProjectController::class);
-    Route::post('projects/{id}/approve', [ProjectController::class, 'approve'])
-        ->middleware('role:dept_manager,super_admin')
-        ->name('projects.approve');
+    Route::post('projects/{id}/archive', [ProjectController::class, 'archive'])
+        ->name('projects.archive');
 
     Route::get('search', [SearchController::class, 'index'])->name('search.index');
     Route::get('search/suggestions', [SearchController::class, 'suggestions'])->name('search.suggestions');

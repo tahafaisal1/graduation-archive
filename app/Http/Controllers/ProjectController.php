@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ArchiveProjectRequest;
 use App\Http\Requests\DeleteProjectRequest;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
@@ -218,12 +219,12 @@ class ProjectController extends Controller
             ->with('success', 'تم حذف المشروع بنجاح');
     }
 
-    public function approve(int $id): RedirectResponse
+    public function archive(ArchiveProjectRequest $request, int $id): RedirectResponse
     {
         $project = Project::where('is_deleted', false)->findOrFail($id);
 
         $project->update(['current_status_id' => Project::STATUS_ARCHIVED]);
 
-        return back()->with('success', 'تم اعتماد المشروع بنجاح');
+        return back()->with('success', 'تم أرشفة المشروع بنجاح');
     }
 }

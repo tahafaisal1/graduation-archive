@@ -153,7 +153,7 @@ test('project PDF cannot exceed 15MB', function () {
 
 // ── Approve ───────────────────────────────────────────────────────────────────
 
-test('dept_manager can approve pending project', function () {
+test('dept_manager can archive pending project', function () {
     $deps = makeProjectDeps();
 
     $project = Project::factory()->create([
@@ -163,8 +163,11 @@ test('dept_manager can approve pending project', function () {
         'current_status_id' => 2,
     ]);
 
-    $this->actingAs(userWithRole('dept_manager'))
-        ->post(route('projects.approve', $project->id))
+    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
+    $manager->assignRole('dept_manager');
+
+    $this->actingAs($manager)
+        ->post(route('projects.archive', $project->id))
         ->assertRedirect();
 
     $this->assertDatabaseHas('projects', [
@@ -173,7 +176,7 @@ test('dept_manager can approve pending project', function () {
     ]);
 });
 
-test('dept_staff cannot approve project', function () {
+test('dept_staff cannot archive project', function () {
     $dept = Department::factory()->create();
     $deps = makeProjectDeps($dept);
 
@@ -188,7 +191,77 @@ test('dept_staff cannot approve project', function () {
     $staff->assignRole('dept_staff');
 
     $this->actingAs($staff)
-        ->post(route('projects.approve', $project->id))
+        ->post(route('projects.archive', $project->id))
+        ->assertForbidden();
+});
+
+// ── Archive ───────────────────────────────────────────────────────────────────
+
+test('dept_manager can archive a pending project in their own department', function () {
+    $deps = makeProjectDeps();
+    $project = Project::factory()->create([
+        'department_id'     => $deps['dept']->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+    ]);
+
+    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
+    $manager->assignRole('dept_manager');
+
+    $this->actingAs($manager)
+        ->post(route('projects.archive', $project->id))
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'current_status_id' => Project::STATUS_ARCHIVED]);
+});
+
+test('dept_manager of a different department cannot archive a pending project', function () {
+    $dept = Department::factory()->create();
+    $otherDept = Department::factory()->create();
+    $deps = makeProjectDeps($dept);
+    $manager = User::factory()->create(['department_id' => $otherDept->id]);
+    $manager->assignRole('dept_manager');
+
+    $project = Project::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+    ]);
+
+    $this->actingAs($manager)
+        ->post(route('projects.archive', $project->id))
+        ->assertForbidden();
+});
+
+test('cannot archive an already-archived project', function () {
+    $deps = makeProjectDeps();
+    $project = Project::factory()->create([
+        'department_id'     => $deps['dept']->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_ARCHIVED,
+    ]);
+
+    $this->actingAs(userWithRole('dept_manager'))
+        ->post(route('projects.archive', $project->id))
+        ->assertForbidden();
+});
+
+test('dept_staff cannot archive a project', function () {
+    $deps = makeProjectDeps();
+    $project = Project::factory()->create([
+        'department_id'     => $deps['dept']->id,
+        'specialization_id' => $deps['spec']->id,
+        'supervisor_id'     => $deps['supervisor']->id,
+        'current_status_id' => Project::STATUS_PENDING,
+    ]);
+    $staff = User::factory()->create(['department_id' => $deps['dept']->id]);
+    $staff->assignRole('dept_staff');
+
+    $this->actingAs($staff)
+        ->post(route('projects.archive', $project->id))
         ->assertForbidden();
 });
 

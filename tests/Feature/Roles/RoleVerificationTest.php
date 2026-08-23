@@ -129,12 +129,12 @@ test('super_admin can create project', function () {
     $this->assertDatabaseHas('projects', ['project_title' => 'نظام تجريبي لاختبار الصلاحيات']);
 });
 
-test('super_admin can approve a pending project', function () {
+test('super_admin can archive a pending project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
     $project = pendingRvProject($dept->id, $spec->id, $sv->id);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->post(route('projects.approve', $project->id))
+        ->post(route('projects.archive', $project->id))
         ->assertRedirect();
 
     $this->assertDatabaseHas('projects', ['id' => $project->id, 'current_status_id' => 1]);
@@ -212,13 +212,13 @@ test('dept_manager can create project in their department', function () {
     ]);
 });
 
-test('dept_manager can approve a pending project', function () {
+test('dept_manager can archive a pending project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
     $project = pendingRvProject($dept->id, $spec->id, $sv->id);
     $mgr     = managerInDept($dept->id);
 
     $this->actingAs($mgr)
-        ->post(route('projects.approve', $project->id))
+        ->post(route('projects.archive', $project->id))
         ->assertRedirect();
 
     $this->assertDatabaseHas('projects', ['id' => $project->id, 'current_status_id' => 1]);
@@ -523,13 +523,13 @@ test('dept_staff cannot delete a project', function () {
         ->assertForbidden();
 });
 
-test('dept_staff cannot approve a project', function () {
+test('dept_staff cannot archive a project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
     $project = pendingRvProject($dept->id, $spec->id, $sv->id);
     $staff   = staffInDept($dept->id);
 
     $this->actingAs($staff)
-        ->post(route('projects.approve', $project->id))
+        ->post(route('projects.archive', $project->id))
         ->assertForbidden();
 });
 

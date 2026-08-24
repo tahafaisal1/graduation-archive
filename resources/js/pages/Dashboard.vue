@@ -11,10 +11,10 @@ import { computed } from 'vue'
 interface StatusItem    { status_name: string; count: number }
 interface RecentProject {
     id: number
-    project_title: string
+    title: string
     academic_year: string
     department: { name: string } | null
-    current_status: { status_name: string } | null
+    status: { status_name: string } | null
 }
 interface SpecItem       { id: number; name: string; project_count: number }
 interface SupervisorItem { id: number; name: string; department: string | null; project_count: number }
@@ -142,10 +142,10 @@ const reportLinks = [
                                     >
                                         <td class="px-4 py-2.5">
                                             <Link
-                                                :href="`/projects/${p.id}`"
+                                                :href="`/proposals/${p.id}`"
                                                 class="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
                                             >
-                                                {{ p.project_title }}
+                                                {{ p.title }}
                                             </Link>
                                         </td>
                                         <td class="px-4 py-2.5 text-sm text-gray-600 dark:text-gray-400">
@@ -156,7 +156,7 @@ const reportLinks = [
                                         </td>
                                         <td class="px-4 py-2.5">
                                             <span class="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                                {{ p.current_status?.status_name ?? '—' }}
+                                                {{ p.status?.status_name ?? '—' }}
                                             </span>
                                         </td>
                                     </tr>

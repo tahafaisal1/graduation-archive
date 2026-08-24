@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -10,106 +10,47 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
-    use HasFactory;
-
-    public const STATUS_ARCHIVED = 1;
-    public const STATUS_PENDING  = 2;
+    public const STATUS_IN_PROGRESS = 1;
+    public const STATUS_ARCHIVED    = 2;
 
     protected $fillable = [
-        'project_title',
-        'description',
-        'academic_year',
-        'department_id',
-        'specialization_id',
-        'supervisor_id',
-        'current_status_id',
-        'created_by',
-        'based_on_project_id',
-        'draft_file_path',
+        'proposal_id',
+        'status_id',
         'final_score',
+        'instantiated_by',
+        'instantiated_at',
         'visit_count',
         'is_deleted',
     ];
 
+    // Read-by-reference: supervisor/students are never duplicated onto
+    // `projects` — they're proxied through the linked proposal and appended
+    // to JSON so the frontend prop shape stays flat (project.supervisor,
+    // project.students), unchanged from before the split.
+    protected $appends = ['supervisor', 'students'];
+
     protected function casts(): array
     {
         return [
-            'is_deleted'              => 'boolean',
-            'final_score'             => 'decimal:2',
+            'is_deleted'      => 'boolean',
+            'final_score'     => 'decimal:2',
+            'instantiated_at' => 'datetime',
         ];
     }
 
-    public function department(): BelongsTo
+    public function proposal(): BelongsTo
     {
-        return $this->belongsTo(Department::class);
+        return $this->belongsTo(Proposal::class);
     }
 
-    public function specialization(): BelongsTo
+    public function instantiatedBy(): BelongsTo
     {
-        return $this->belongsTo(Specialization::class);
+        return $this->belongsTo(User::class, 'instantiated_by');
     }
 
-    public function supervisor(): BelongsTo
+    public function status(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'supervisor_id');
-    }
-
-    public function createdBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'created_by');
-    }
-
-    public function currentStatus(): BelongsTo
-    {
-        return $this->belongsTo(ProjectStatus::class, 'current_status_id');
-    }
-
-    public function basedOn(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'based_on_project_id');
-    }
-
-    public function canBeModifiedBy(User $user): bool
-    {
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        if ($this->current_status_id !== self::STATUS_PENDING) {
-            return false;
-        }
-
-        if ($user->hasRole('dept_manager') && $user->department_id === $this->department_id) {
-            return true;
-        }
-
-        return $this->created_by === $user->id && $user->department_id === $this->department_id;
-    }
-
-    public function canBeArchivedBy(User $user): bool
-    {
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        return $user->hasRole('dept_manager')
-            && $user->department_id === $this->department_id
-            && $this->current_status_id === self::STATUS_PENDING;
-    }
-
-    public function students(): HasMany
-    {
-        return $this->hasMany(ProjectStudent::class);
-    }
-
-    public function documents(): HasMany
-    {
-        return $this->hasMany(ProjectDocument::class);
-    }
-
-    public function evaluations(): HasMany
-    {
-        return $this->hasMany(Evaluation::class);
+        return $this->belongsTo(ProjectLifecycleStatus::class, 'status_id');
     }
 
     public function examiners(): BelongsToMany
@@ -118,5 +59,27 @@ class Project extends Model
             ->using(ProjectExaminer::class)
             ->withPivot('assigned_by')
             ->withTimestamps();
+    }
+
+    public function evaluations(): HasMany
+    {
+        return $this->hasMany(Evaluation::class);
+    }
+
+    /**
+     * Proxy accessor — caller must eager-load 'proposal.supervisor' to avoid
+     * an N+1 (see ProjectController::show()).
+     */
+    protected function supervisor(): Attribute
+    {
+        return Attribute::get(fn () => $this->proposal?->supervisor);
+    }
+
+    /**
+     * Proxy accessor — caller must eager-load 'proposal.students'.
+     */
+    protected function students(): Attribute
+    {
+        return Attribute::get(fn () => $this->proposal?->students ?? collect());
     }
 }

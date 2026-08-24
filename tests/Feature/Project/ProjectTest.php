@@ -1,65 +1,79 @@
 <?php
+// tests/Feature/Project/ProjectTest.php
+//
+// Under the proposal/project split, ProjectController is thin — index/show
+// only. All the old create/replace/delete/archive/search-filter assertions
+// that used to live here have moved:
+//   - create/replace/delete ownership matrix  → tests/Feature/Proposal/ProposalTest.php
+//   - instantiate (the old "archive" action)  → tests/Feature/Project/InstantiateProjectTest.php
+//   - examiner/evaluation/final-score          → tests/Feature/Examiner/ExaminerTest.php
+//   - search/filter                            → tests/Feature/Search/SearchTest.php (now proposals.index)
+// What survives here is what's still true about the thin Project surface
+// itself: listing, showing (+ visit count), and its own (قيد التنفيذ/مؤرشف)
+// status rendering.
 
 use App\Models\Department;
 use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
+use Database\Seeders\ProjectLifecycleStatusSeeder;
 use Database\Seeders\ProjectStatusSeeder;
 use Database\Seeders\RoleSeeder;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app()[PermissionRegistrar::class]->forgetCachedPermissions();
     $this->seed(RoleSeeder::class);
     $this->seed(ProjectStatusSeeder::class);
-    Storage::fake('public');
+    $this->seed(ProjectLifecycleStatusSeeder::class);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Creates the three foreign-key dependencies every project needs.
- * Pass an existing $dept to reuse a department across helpers.
+ * Creates a مؤرشف Proposal with the given dept/spec/supervisor and
+ * instantiates its linked Project — mirrors
+ * ReportTest.php::makeReportProject(). `status_id`, if present in
+ * $overrides, is applied to the Project after instantiation (it describes
+ * the Project's own قيد التنفيذ/مؤرشف lifecycle, not the Proposal's).
  */
-function makeProjectDeps(?Department $dept = null): array
+function makeThinProject(?Department $dept = null, ?Specialization $spec = null, ?User $supervisor = null, array $overrides = []): Project
 {
-    $dept       = $dept ?? Department::factory()->create();
-    $spec       = Specialization::factory()->create(['department_id' => $dept->id]);
-    $supervisor = userWithRole('supervisor');
+    $dept       ??= Department::factory()->create();
+    $spec       ??= Specialization::factory()->create(['department_id' => $dept->id]);
+    $supervisor ??= userWithRole('supervisor');
 
-    return compact('dept', 'spec', 'supervisor');
-}
+    $statusOverride = $overrides['status_id'] ?? null;
+    unset($overrides['status_id']);
 
-/**
- * Returns a valid project form payload, mergeable with overrides.
- */
-function projectData(array $deps, array $overrides = []): array
-{
-    return array_merge([
-        'project_title'     => 'Test Project Title',
-        'description'       => 'Project description text',
-        'academic_year'     => '2024/2025',
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'students'          => [
-            ['full_name' => 'Ahmed Ali', 'registration_number' => 'ST001'],
-        ],
-    ], $overrides);
+    $proposal = Proposal::factory()->create(array_merge([
+        'department_id'     => $dept->id,
+        'specialization_id' => $spec->id,
+        'supervisor_id'     => $supervisor->id,
+        'status_id'         => Proposal::STATUS_ARCHIVED,
+        'is_deleted'        => false,
+    ], $overrides));
+
+    $project = $proposal->instantiateProject($supervisor);
+
+    if ($statusOverride !== null) {
+        $project->update(['status_id' => $statusOverride]);
+    }
+
+    return $project;
 }
 
 // ── Visibility ────────────────────────────────────────────────────────────────
 
 test('super_admin can view all projects', function () {
-    $deps = makeProjectDeps();
+    $dept = Department::factory()->create();
+    $spec = Specialization::factory()->create(['department_id' => $dept->id]);
+    $sup  = userWithRole('supervisor');
 
-    Project::factory()->count(3)->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-    ]);
+    makeThinProject($dept, $spec, $sup);
+    makeThinProject($dept, $spec, $sup);
+    makeThinProject($dept, $spec, $sup);
 
     $this->actingAs(userWithRole('super_admin'))
         ->get(route('projects.index'))
@@ -70,378 +84,11 @@ test('super_admin can view all projects', function () {
         );
 });
 
-// ── Create / Store ────────────────────────────────────────────────────────────
-
-test('dept_manager can create project', function () {
-    $deps = makeProjectDeps();
-
-    $this->actingAs(userWithRole('dept_manager'))
-        ->post(route('projects.store'), projectData($deps))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', [
-        'project_title'     => 'Test Project Title',
-        'current_status_id' => 1, // archived — managers bypass approval
-    ]);
-});
-
-test('dept_staff can create project with pending approval status', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-
-    $staff = User::factory()->create(['department_id' => $dept->id]);
-    $staff->assignRole('dept_staff');
-
-    $this->actingAs($staff)
-        ->post(route('projects.store'), projectData($deps))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', [
-        'project_title'     => 'Test Project Title',
-        'current_status_id' => 2, // proposal_submitted — awaits approval
-    ]);
-});
-
-test('dept_staff cannot create project in other department', function () {
-    $ownDept   = Department::factory()->create();
-    $otherDept = Department::factory()->create();
-    $deps      = makeProjectDeps($otherDept);
-
-    $staff = User::factory()->create(['department_id' => $ownDept->id]);
-    $staff->assignRole('dept_staff');
-
-    $this->actingAs($staff)
-        ->post(route('projects.store'), projectData($deps))
-        ->assertForbidden();
-});
-
-test('created project records the creating user as created_by', function () {
-    $deps = makeProjectDeps();
-    $manager = userWithRole('dept_manager');
-
-    $this->actingAs($manager)
-        ->post(route('projects.store'), projectData($deps))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', [
-        'project_title' => 'Test Project Title',
-        'created_by'    => $manager->id,
-    ]);
-});
-
-// ── PDF Validation ────────────────────────────────────────────────────────────
-
-test('project rejects non-PDF uploaded file', function () {
-    $deps = makeProjectDeps();
-
-    $this->actingAs(userWithRole('dept_manager'))
-        ->post(route('projects.store'), projectData($deps, [
-            'pdf_file' => UploadedFile::fake()->create('document.txt', 100, 'text/plain'),
-        ]))
-        ->assertSessionHasErrors('pdf_file');
-});
-
-test('project PDF cannot exceed 15MB', function () {
-    $deps = makeProjectDeps();
-
-    $this->actingAs(userWithRole('dept_manager'))
-        ->post(route('projects.store'), projectData($deps, [
-            'pdf_file' => UploadedFile::fake()->create('document.pdf', 16384, 'application/pdf'), // 16 MB
-        ]))
-        ->assertSessionHasErrors('pdf_file');
-});
-
-// ── Archive ───────────────────────────────────────────────────────────────────
-
-test('dept_manager can archive a pending project in their own department', function () {
-    $deps = makeProjectDeps();
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-    ]);
-
-    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
-    $manager->assignRole('dept_manager');
-
-    $this->actingAs($manager)
-        ->post(route('projects.archive', $project->id))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'current_status_id' => Project::STATUS_ARCHIVED]);
-});
-
-test('dept_manager of a different department cannot archive a pending project', function () {
-    $dept = Department::factory()->create();
-    $otherDept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $manager = User::factory()->create(['department_id' => $otherDept->id]);
-    $manager->assignRole('dept_manager');
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-    ]);
-
-    $this->actingAs($manager)
-        ->post(route('projects.archive', $project->id))
-        ->assertForbidden();
-});
-
-test('cannot archive an already-archived project', function () {
-    $deps = makeProjectDeps();
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_ARCHIVED,
-    ]);
-
-    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
-    $manager->assignRole('dept_manager');
-
-    $this->actingAs($manager)
-        ->post(route('projects.archive', $project->id))
-        ->assertForbidden();
-});
-
-test('dept_staff cannot archive a project', function () {
-    $deps = makeProjectDeps();
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-    ]);
-    $staff = User::factory()->create(['department_id' => $deps['dept']->id]);
-    $staff->assignRole('dept_staff');
-
-    $this->actingAs($staff)
-        ->post(route('projects.archive', $project->id))
-        ->assertForbidden();
-});
-
-// ── Delete / Soft Delete ──────────────────────────────────────────────────────
-
-test('dept_manager can soft delete project', function () {
-    $deps = makeProjectDeps();
-
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-    ]);
-
-    $manager = User::factory()->create(['department_id' => $deps['dept']->id]);
-    $manager->assignRole('dept_manager');
-
-    $this->actingAs($manager)
-        ->delete(route('projects.destroy', $project->id))
-        ->assertRedirect(route('projects.index'));
-
-    $this->assertDatabaseHas('projects', [
-        'id'         => $project->id,
-        'is_deleted' => true,
-    ]);
-});
-
-test('dept_staff cannot delete project', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-    ]);
-
-    $staff = User::factory()->create(['department_id' => $dept->id]);
-    $staff->assignRole('dept_staff');
-
-    $this->actingAs($staff)
-        ->delete(route('projects.destroy', $project->id))
-        ->assertForbidden();
-});
-
-// ── Replace / Delete Ownership Rules ─────────────────────────────────────────
-
-test('creator can replace their own pending project details', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $staff = User::factory()->create(['department_id' => $dept->id]);
-    $staff->assignRole('dept_staff');
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-        'created_by'        => $staff->id,
-    ]);
-
-    $this->actingAs($staff)
-        ->put(route('projects.update', $project->id), projectData($deps, ['project_title' => 'Replaced Title']))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'project_title' => 'Replaced Title']);
-});
-
-test('non-creator dept_staff cannot replace another staff member pending project', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $creator = User::factory()->create(['department_id' => $dept->id]);
-    $otherStaff = User::factory()->create(['department_id' => $dept->id]);
-    $otherStaff->assignRole('dept_staff');
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-        'created_by'        => $creator->id,
-    ]);
-
-    $this->actingAs($otherStaff)
-        ->put(route('projects.update', $project->id), projectData($deps))
-        ->assertForbidden();
-});
-
-test('dept_manager cannot replace an archived project details', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $manager = User::factory()->create(['department_id' => $dept->id]);
-    $manager->assignRole('dept_manager');
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_ARCHIVED,
-    ]);
-
-    $this->actingAs($manager)
-        ->put(route('projects.update', $project->id), projectData($deps))
-        ->assertForbidden();
-});
-
-test('super_admin can replace an archived project details', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_ARCHIVED,
-    ]);
-
-    $this->actingAs(userWithRole('super_admin'))
-        ->put(route('projects.update', $project->id), projectData($deps, ['project_title' => 'Admin Replaced']))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'project_title' => 'Admin Replaced']);
-});
-
-test('dept_staff cannot move a project to a different department via replace', function () {
-    $dept = Department::factory()->create();
-    $otherDept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $staff = User::factory()->create(['department_id' => $dept->id]);
-    $staff->assignRole('dept_staff');
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-        'created_by'        => $staff->id,
-    ]);
-
-    $this->actingAs($staff)
-        ->put(route('projects.update', $project->id), projectData($deps, ['department_id' => $otherDept->id]))
-        ->assertForbidden();
-
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'department_id' => $dept->id]);
-});
-
-test('super_admin can move a project to a different department via replace', function () {
-    $dept = Department::factory()->create();
-    $otherDept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $otherSpec = Specialization::factory()->create(['department_id' => $otherDept->id]);
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-    ]);
-
-    $this->actingAs(userWithRole('super_admin'))
-        ->put(route('projects.update', $project->id), projectData($deps, [
-            'department_id'     => $otherDept->id,
-            'specialization_id' => $otherSpec->id,
-        ]))
-        ->assertRedirect();
-
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'department_id' => $otherDept->id]);
-});
-
-test('creator can delete their own pending project', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $staff = User::factory()->create(['department_id' => $dept->id]);
-    $staff->assignRole('dept_staff');
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-        'created_by'        => $staff->id,
-    ]);
-
-    $this->actingAs($staff)
-        ->delete(route('projects.destroy', $project->id))
-        ->assertRedirect(route('projects.index'));
-
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'is_deleted' => true]);
-});
-
-test('dept_manager cannot delete an archived project', function () {
-    $dept = Department::factory()->create();
-    $deps = makeProjectDeps($dept);
-    $manager = User::factory()->create(['department_id' => $dept->id]);
-    $manager->assignRole('dept_manager');
-
-    $project = Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_ARCHIVED,
-    ]);
-
-    $this->actingAs($manager)
-        ->delete(route('projects.destroy', $project->id))
-        ->assertForbidden();
-
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'is_deleted' => false]);
-});
-
 // ── Visit Count ───────────────────────────────────────────────────────────────
 
 test('project visit count increments on each show', function () {
-    $deps = makeProjectDeps();
-
-    $project = Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'visit_count'       => 0,
-    ]);
+    $project = makeThinProject();
+    $project->update(['visit_count' => 0]);
 
     $user = userWithRole('super_admin');
     $this->actingAs($user)->get(route('projects.show', $project->id));
@@ -453,117 +100,11 @@ test('project visit count increments on each show', function () {
     ]);
 });
 
-// ── Search & Filters ──────────────────────────────────────────────────────────
-
-test('search returns only title-matching projects', function () {
-    $deps = makeProjectDeps();
-
-    Project::factory()->create([
-        'project_title'     => 'Unique Alpha Title',
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-    ]);
-    Project::factory()->create([
-        'project_title'     => 'Something Completely Different',
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-    ]);
-
-    $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['search' => 'Unique Alpha']))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 1)
-        );
-});
-
-test('filter by department returns only that department projects', function () {
-    $depsA = makeProjectDeps();
-    $depsB = makeProjectDeps(); // separate department
-
-    Project::factory()->count(2)->create([
-        'department_id'     => $depsA['dept']->id,
-        'specialization_id' => $depsA['spec']->id,
-        'supervisor_id'     => $depsA['supervisor']->id,
-    ]);
-    Project::factory()->create([
-        'department_id'     => $depsB['dept']->id,
-        'specialization_id' => $depsB['spec']->id,
-        'supervisor_id'     => $depsB['supervisor']->id,
-    ]);
-
-    $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['department_id' => $depsA['dept']->id]))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
-        );
-});
-
-test('filter by academic year returns correct projects', function () {
-    $deps = makeProjectDeps();
-
-    Project::factory()->count(2)->create([
-        'academic_year'     => '2023/2024',
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-    ]);
-    Project::factory()->create([
-        'academic_year'     => '2022/2023',
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-    ]);
-
-    $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['academic_year' => '2023/2024']))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
-        );
-});
-
-// ── Similarity Warning ────────────────────────────────────────────────────────
-
-test('duplicate title projects both appear in search results', function () {
-    $deps  = makeProjectDeps();
-    $title = 'Identical Project Title';
-
-    Project::factory()->count(2)->create([
-        'project_title'     => $title,
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-    ]);
-
-    $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['search' => $title]))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
-        );
-});
-
 // ── Status Rendering ─────────────────────────────────────────────────────────
 
-test('projects index never renders a status other than مقترح or مؤرشف', function () {
-    $deps = makeProjectDeps();
-
-    Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_PENDING,
-    ]);
-    Project::factory()->create([
-        'department_id'     => $deps['dept']->id,
-        'specialization_id' => $deps['spec']->id,
-        'supervisor_id'     => $deps['supervisor']->id,
-        'current_status_id' => Project::STATUS_ARCHIVED,
-    ]);
+test('projects index never renders a status other than قيد التنفيذ or مؤرشف', function () {
+    makeThinProject(overrides: ['status_id' => Project::STATUS_IN_PROGRESS]);
+    makeThinProject(overrides: ['status_id' => Project::STATUS_ARCHIVED]);
 
     $this->actingAs(userWithRole('super_admin'))
         ->get(route('projects.index'))
@@ -571,7 +112,7 @@ test('projects index never renders a status other than مقترح or مؤرشف'
         ->assertInertia(fn ($page) => $page
             ->component('Projects/Index')
             ->where('projects.data', fn ($rows) => collect($rows)
-                ->pluck('current_status.status_name')
-                ->every(fn ($name) => in_array($name, ['مقترح', 'مؤرشف'], true)))
+                ->pluck('status.status_name')
+                ->every(fn ($name) => in_array($name, ['قيد التنفيذ', 'مؤرشف'], true)))
         );
 });

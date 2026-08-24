@@ -36,25 +36,35 @@ Phase 1 (Active Now):
 2. departments
 3. specializations
 4. users (+ registration_number field)
-5. projects — central evolving entity
-6. project_students (weak entity, with status/withdrawal)
-7. project_documents — milestone docs only (no drafts)
+5. proposals — the paper-approved form (title/description/dept/spec/supervisor/students/PDF);
+   2-state lifecycle (مقترح/مؤرشف), never graded
+6. proposal_students (weak entity, with status/withdrawal) — belongs to a proposal, not a project
+7. projects — the actual in-progress/graded work; `belongsTo` a proposal (unique `proposal_id`,
+   `restrictOnDelete`); reads supervisor/students by reference through its proposal, never
+   duplicates them
 8. examiners
-9. project_examiners (M:N junction)
-10. project_status — reference table
-11. evaluations
+9. project_examiners (M:N junction) — attaches to an instantiated `projects` row only
+10. project_status — reference table for `proposals.status_id` (id=1 مؤرشف, id=2 مقترح)
+11. project_lifecycle_status — reference table for `projects.status_id` (id=1 قيد التنفيذ,
+    id=2 مؤرشف) — a separate table/lifecycle from `project_status` above; do not confuse the two
+12. evaluations — attaches to an instantiated `projects` row only
 
 Phase 2 (Future):
-12. student_eligibility
-13. supervisor_history
+13. student_eligibility
+14. supervisor_history
 
-Note: the project lifecycle has been scoped down to 2 statuses (see "Key Business Rules" below).
-DEFENSE and STATUS_HISTORY were never implemented — planning-only, now removed from scope entirely.
+`project_documents` was dropped entirely on 2026-08-24 (empty table, 0 rows, confirmed via audit
+before dropping) — milestone document tracking is not currently implemented anywhere in the split
+schema.
+
+Note: the *proposal* lifecycle is exactly 2 statuses (see "Key Business Rules" below); the
+*project* lifecycle is a separate, also-2-status table (see table 11 above). DEFENSE and
+STATUS_HISTORY were never implemented — planning-only, now removed from scope entirely.
 
 `supervisor_approved_by/_at` and `department_approved_by/_at` (added 2026-08-17) were removed on
 2026-08-23 — approval turned out to happen on paper, outside the system, so the fields tracked
-nothing any controller or UI ever read. `projects.created_by` (FK to users, nullable) was added
-in their place to support the creator-or-department-manager permission check above.
+nothing any controller or UI ever read. `proposals.created_by` (FK to users, nullable) carries
+forward the creator-or-department-manager permission check described below.
 
 ## Roles (RBAC via Spatie)
 1. super_admin — full access
@@ -64,29 +74,51 @@ in their place to support the creator-or-department-manager permission check abo
 5. viewer — browse only (Phase 2)
 
 ## Key Business Rules
-- One project = one specialization, one supervisor
-- Fixed 2 examiners per project
-- Final score entered by dept_manager only
-- PDF files only, max 15MB
-- Soft delete on projects (is_deleted field)
-- Project lifecycle is exactly 2 statuses: "مقترح" (proposal, id=2) → "مؤرشف" (archived, id=1).
-  IDs kept as originally seeded (id=1 already meant "archived" everywhere in the codebase —
-  ProjectController, PublicController, SearchService, ReportService, ProjectsImport — so only
-  the seeded Arabic text/sort_order changed, not which ID means what).
+This is a two-entity lifecycle: a **Proposal** (the paper-approved form) is created, then a
+dept_manager (or super_admin) **instantiates** it into a **Project** (the actual in-progress/
+graded work). A proposal is never graded; a project has no independent supervisor/specialization
+fields of its own — it reads them by reference through `project->proposal`.
+
+- One proposal = one specialization, one supervisor; the project it produces inherits both by
+  reference, never by copy
+- Fixed 2 examiners per project (examiners/evaluations can only ever attach to an instantiated
+  `projects` row — there is structurally no project-shaped row at a still-مقترح proposal's id for
+  them to attach to)
+- Final score entered by dept_manager only, on the `projects` row
+- PDF files only, max 15MB (`proposals.draft_file_path`)
+- Soft delete on both proposals and projects (`is_deleted` field on each, independently)
+- **Proposal lifecycle** is exactly 2 statuses: "مقترح" (pending, id=2) → "مؤرشف" (archived, id=1)
+  in `project_status`. IDs kept as originally seeded from the pre-split single-entity model (id=1
+  already meant "archived" everywhere in the codebase, so only the seeded Arabic text/sort_order
+  changed, not which ID means what).
+- **Project lifecycle** is a separate 2-status table (`project_lifecycle_status`): "قيد التنفيذ"
+  (in progress, id=1, the default `instantiateProject()` lands a new project at) → "مؤرشف"
+  (archived, id=2). **No UI currently exists to move a project from قيد التنفيذ to مؤرشف** —
+  `PublicController`'s browse/show pages only ever surface `Project::STATUS_ARCHIVED` projects, so
+  a freshly-instantiated project is invisible there until someone flips its status directly (e.g.
+  via tinker or a future admin action). This is a known, flagged gap, not a bug.
 - Supervisor and department approval happen on paper, outside the system — there is no digital
-  approval tracking. A project created by dept_manager/dept_staff is implicitly pre-approved by
-  their role; the system's only job is to gate what can happen to it while it's مقترح (pending):
-  - Replace details/file or soft-delete: only the creator (`projects.created_by`) or the
-    dept_manager of that department, and only while current_status_id = 2 (مقترح). super_admin
-    bypasses both the status and ownership checks.
-  - Archive (مقترح → مؤرشف): only a dept_manager of that same department (or super_admin), only
-    while current_status_id = 2. Once مؤرشف, replace/delete are locked for everyone except
-    super_admin. See `Project::canBeModifiedBy()`/`canBeArchivedBy()` for the single source of
-    truth, and `UpdateProjectRequest`/`DeleteProjectRequest`/`ArchiveProjectRequest` for where
-    it's enforced.
-- Only milestone documents saved (not every draft)
-- dept_staff projects stay مقترح (pending) until a dept_manager of that department archives them —
-  see the paper-approval bullet above for the full permission matrix
+  approval tracking. A proposal created by dept_manager/dept_staff is implicitly pre-approved by
+  their role; the system's only job is to gate what can happen to it while it's مقترح (pending) —
+  creation itself never auto-archives for any role, including dept_manager (that was the old
+  conflated-model behavior; now only `instantiateProject()` ever moves a proposal to مؤرشف):
+  - Replace details/file or soft-delete: only the creator (`proposals.created_by`) or the
+    dept_manager of that department, and only while status_id = STATUS_PENDING (مقترح).
+    super_admin bypasses both the status and ownership checks. Moving a proposal to a different
+    department via replace is super_admin-only, even for a dept_manager who otherwise passes the
+    ownership check.
+  - Instantiate (مقترح → مؤرشف + creates the linked `projects` row): only a dept_manager of that
+    same department (or super_admin), only while status_id = STATUS_PENDING — this is the single
+    atomic action that used to be called "archive" on the old flat `Project` model. Once مؤرشف, a
+    proposal cannot be instantiated again (double-click guard), and replace/delete on the proposal
+    are locked for everyone except super_admin. See `Proposal::canBeModifiedBy()`/
+    `canBeInstantiatedBy()` (ported from the old `Project::canBeModifiedBy()`/`canBeArchivedBy()`)
+    for the single source of truth, and `UpdateProposalRequest`/`DeleteProposalRequest`/
+    `InstantiateProjectRequest` for where it's enforced.
+- Only milestone documents were ever in scope, and even that scope was dropped along with
+  `project_documents` (see "Database" above) — nothing tracks per-document approval today
+- dept_staff proposals stay مقترح (pending) until a dept_manager of that department instantiates
+  them — see the paper-approval bullet above for the full permission matrix
 - Max 10 concurrent users
 - Arabic RTL interface
 
@@ -135,6 +167,48 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - Max upload: 15MB PDF only
 
 ## Current Status
+- ✅ **Proposal/Project Split** — 232/232 total suite (0 failures)
+  - The previously-conflated `Project` entity is now two entities: **`Proposal`** (the
+    paper-approved form — title/description/dept/spec/supervisor/students/PDF, 2-state lifecycle
+    مقترح↔مؤرشف via `project_status`, never graded) and **`Project`** (the actual in-progress/
+    graded work — `belongsTo` a `Proposal` via a unique, `restrictOnDelete` `proposal_id`; reads
+    `supervisor`/`students` by reference through `$project->proposal` via `$appends =
+    ['supervisor', 'students']` accessors, never duplicating them onto `projects`). See "Key
+    Business Rules" above for the full lifecycle/permission matrix.
+  - `Proposal::instantiateProject(User $actor): Project` — the single atomic action (wrapped in
+    `DB::transaction()`) that flips a proposal مقترح→مؤرشف and creates its linked `Project` row in
+    one step; either both happen or neither does (verified by a test that force-fails the insert
+    and confirms the status flip rolls back). Gated by `Proposal::canBeInstantiatedBy(User $user)`
+    — ported from the old flat `Project::canBeArchivedBy()`: true for super_admin unconditionally,
+    otherwise requires dept_manager of that proposal's department AND status_id = STATUS_PENDING.
+    Enforced via `InstantiateProjectRequest` on `POST proposals/{id}/instantiate`.
+  - Data migration: `app/Console/Commands/MigrateProposalProjectData.php`, run via
+    `php artisan proposals:migrate-legacy-data`. Before migrating, it cleans up a data-integrity
+    bug found during the pre-migration audit — legacy project id=1 was still مقترح (pending) but
+    had examiners/evaluations/a final score already attached to it, which is now structurally
+    impossible (examiners/evaluations can only ever attach to an instantiated `projects` row, not
+    a proposal-only id) — id=1 is cleaned (graded data stripped) before being copied forward as a
+    proposal-only row. Final counts: 25 proposals, 20 projects (the 20 originally-مؤرشف rows each
+    get exactly one instantiated project); legacy `project_students`/`projects_legacy` tables
+    dropped after verification.
+  - `visit_count`/`instantiated_by`(+`instantiated_at`) both live on `projects`, not `proposals`:
+    `visit_count` is inherently a view-count on the instantiated/archived work (public browse/show
+    only ever surface instantiated projects), and `instantiated_by`/`_at` record who/when performed
+    the instantiate action that produced that specific project row — nullable, since the 20 rows
+    backfilled by the data migration command have no real "who clicked" actor.
+  - New route names: `proposals.index/create/store/show/edit/update/destroy` (full resource) +
+    `POST proposals/{id}/instantiate` named `proposals.instantiate`; `projects.index`/
+    `projects.show` only (GET, thin — no create/store/edit/update/destroy on `Project` at all;
+    project creation/replace/delete all happen on the owning `Proposal` instead).
+  - **Flagged limitation**: no UI currently exists to move a project from قيد التنفيذ (in
+    progress, id=1 in `project_lifecycle_status`, the default `instantiateProject()` lands a new
+    project at) to مؤرشف (archived, id=2) — `PublicController`'s browse/show pages only ever
+    surface `Project::STATUS_ARCHIVED` projects, so a freshly-instantiated project is invisible on
+    the public site until its status is flipped some other way (tinker, a future admin action).
+    This is a known, intentionally out-of-scope gap for this change, not a bug.
+  - This entry supersedes/completes Tasks 1-7 of the `2026-08-24-proposal-project-split` plan
+    (schema, models, data migration, controllers/routes, frontend, and full test-suite realignment
+    — see `.superpowers/sdd/2026-08-24-proposal-project-split/` for the full per-task history).
 - 🐛 **Bugfix — Ghost "في انتظار الموافقة" status badge** — the prior Paper-Approval Proposal
   Lifecycle change (below) updated the DB, backend authorization, and both Vue pages to the
   2-status model, but missed `resources/js/composables/useProjectStatus.ts`, which still mapped

@@ -29,6 +29,32 @@
 | UI Primitives | radix-vue | ^1.9.11 |
 | Route helpers | ziggy-js | ^2.4.2 |
 
+### Major Changes
+
+- **2026-08-24 — Proposal/Project Split.** The previously-conflated `Project` entity is now two
+  entities: **`Proposal`** (the paper-approved form — title/description/dept/spec/supervisor/
+  students/PDF; 2-state مقترح↔مؤرشف lifecycle via `project_status`; never graded) and **`Project`**
+  (the actual in-progress/graded work — `belongsTo` a `Proposal` via a unique, `restrictOnDelete`
+  `proposal_id`; reads `supervisor`/`students` by reference through `$project->proposal`, never
+  duplicating them). `Proposal::instantiateProject(User $actor): Project` is the single atomic
+  action (`DB::transaction()`-wrapped) that flips a proposal مقترح→مؤرشف and creates its linked
+  `Project` row in one step; gated by `Proposal::canBeInstantiatedBy()` (ported from the old flat
+  `Project::canBeArchivedBy()`). Data migrated via `php artisan proposals:migrate-legacy-data`
+  (`app/Console/Commands/MigrateProposalProjectData.php`), which first cleans up legacy project
+  id=1 (found مقترح but with examiners/evaluations/a score already attached — now structurally
+  impossible under the split) before copying 25 proposals / 20 projects forward. `visit_count` and
+  `instantiated_by`/`instantiated_at` live on `projects` (view-count and instantiation-actor
+  concepts belong to the instantiated work, not the form). New route names:
+  `proposals.index/create/store/show/edit/update/destroy` + `proposals.instantiate`; `projects.*`
+  is now GET-only (`index`/`show`) — no create/store/edit/update/destroy on `Project` directly.
+  **Flagged limitation:** no UI exists yet to move a project from قيد التنفيذ (in progress, the
+  default `instantiateProject()` lands it at) to مؤرشف (archived) in `project_lifecycle_status` —
+  public browse/show only ever surface مؤرشف projects, so a freshly-instantiated project is
+  invisible there until its status is flipped some other way. See Section 2 below for the full
+  updated schema and `.superpowers/sdd/2026-08-24-proposal-project-split/` for the complete
+  per-task history (schema, models, data migration, controllers/routes, frontend, full-suite
+  realignment — 232/232 tests passing, 0 failures).
+
 ### Bugfixes / Corrections
 
 - **2026-08-24 — Ghost "في انتظار الموافقة" status badge removed.** Root cause:
@@ -139,6 +165,10 @@ Note: `description` column added by migration `2026_06_17_000001_add_description
 
 ### Table: project_status
 
+Backs `proposals.status_id` (the Proposal lifecycle) since the 2026-08-24 split. Do not confuse
+with `project_lifecycle_status` below, which backs `projects.status_id` (the Project lifecycle) —
+these are two independent 2-row reference tables with different meanings at the same ids.
+
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
 | id | tinyint unsigned, PK | No | auto | Primary key (tiny int) |
@@ -164,48 +194,62 @@ seed data. Supervisor and department approval happen on paper, outside the syste
 2026-08-23) — there is no digital approval tracking; see the `projects` table note below for
 what replaced the short-lived `supervisor_approved_by/_at`/`department_approved_by/_at` fields.
 
-### Table: projects
+### Table: proposals (added 2026-08-24, split)
+
+The paper-approved form. One row per submitted proposal; never carries grading data.
 
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
 | id | bigint unsigned, PK | No | auto | Primary key |
-| project_title | varchar(255) | No | — | Project title (Arabic) |
+| title | varchar(255) | No | — | Proposal title (Arabic) |
 | description | text | Yes | null | Long description |
 | academic_year | varchar(9) | No | — | e.g., "2024/2025" |
 | department_id | bigint unsigned, FK | No | — | FK to departments.id |
 | specialization_id | bigint unsigned, FK | No | — | FK to specializations.id |
 | supervisor_id | bigint unsigned, FK | No | — | FK to users.id |
-| current_status_id | tinyint unsigned, FK | No | — | FK to project_status.id |
-| created_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — added 2026-08-23; set from auth()->id() in ProjectController::store() |
-| based_on_project_id | bigint unsigned, FK | Yes | null | FK to projects.id (nullOnDelete) — evolution link |
+| created_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) |
 | draft_file_path | varchar(255) | Yes | null | Path to uploaded PDF in public storage |
+| status_id | tinyint unsigned, FK | No | — | FK to project_status.id (2-state مقترح/مؤرشف lifecycle) |
+| based_on_project_id | bigint unsigned | Yes | null | Points at projects.id (no DB-level FK constraint) — "a proposal building on a previously finished project" |
+| is_deleted | boolean | No | false | Soft delete flag |
+| created_at | timestamp | Yes | null | — |
+| updated_at | timestamp | Yes | null | — |
+
+**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `created_by` to users.id (nullOnDelete), `status_id` to project_status.id. `based_on_project_id` has no DB constraint (points at the new `projects` table created by a later migration in the same batch).
+
+### Table: projects (rebuilt 2026-08-24, split)
+
+The actual in-progress/graded work. `belongsTo` a proposal; reads supervisor/students by reference
+through `$project->proposal`, never duplicates them onto this table.
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| id | bigint unsigned, PK | No | auto | Primary key |
+| proposal_id | bigint unsigned, FK, unique | No | — | FK to proposals.id (restrictOnDelete) — one project per proposal |
+| status_id | tinyint unsigned, FK | No | — | FK to project_lifecycle_status.id (2-state قيد التنفيذ/مؤرشف lifecycle — NOT the same table as proposals.status_id) |
 | final_score | decimal(5,2) | Yes | null | Final score out of 100 |
+| instantiated_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — who ran instantiateProject(); null for legacy-migrated rows |
+| instantiated_at | timestamp | Yes | null | When instantiateProject() ran |
 | visit_count | int unsigned | No | 0 | Page view counter |
 | is_deleted | boolean | No | false | Soft delete flag |
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `current_status_id` to project_status.id, `created_by` to users.id (nullOnDelete), `based_on_project_id` to projects.id (self-referential, nullOnDelete).
+**Foreign keys:** `proposal_id` to proposals.id (unique, restrictOnDelete — a hard-deleted proposal must not silently cascade-destroy a graded project and its examiners/evaluations), `status_id` to project_lifecycle_status.id, `instantiated_by` to users.id (nullOnDelete).
 
-Note: `project_documents` (milestone document tracking) already existed prior to this change and
-remains fully in scope — it is unrelated to the removed lifecycle statuses. STATUS_HISTORY and
-DEFENSE tables were audited codebase-wide and confirmed to have never been implemented (planning
-docs only, no migration/model/controller) — nothing was removed because nothing existed.
+Note (2026-08-23, pre-split): `supervisor_approved_by/_at` and `department_approved_by/_at` (added
+2026-08-17) were dropped by migration `2026_08_23_120000_drop_approval_gate_columns_from_projects_table.php`
+— approval turned out to happen on paper, outside the system. `created_by` was added in their
+place on the old flat `projects` table; it now lives on `proposals` instead (see table above),
+carrying forward the same creator-or-department-manager permission check described in CLAUDE.md's
+"Key Business Rules", now enforced by `Proposal::canBeModifiedBy()`/`canBeInstantiatedBy()`.
 
-Note (2026-08-23): `supervisor_approved_by/_at` and `department_approved_by/_at` (added 2026-08-17)
-were dropped by migration `2026_08_23_120000_drop_approval_gate_columns_from_projects_table.php`
-— approval turned out to happen on paper, outside the system, so the fields tracked nothing any
-controller or UI ever read. Migration `2026_08_23_120100_add_created_by_to_projects_table.php`
-added `created_by` in their place, to support the creator-or-department-manager permission check
-described in CLAUDE.md's "Key Business Rules" and enforced by `Project::canBeModifiedBy()`/
-`canBeArchivedBy()`.
-
-### Table: project_students
+### Table: proposal_students (added 2026-08-24, split — replaces project_students)
 
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
 | id | bigint unsigned, PK | No | auto | Primary key |
-| project_id | bigint unsigned, FK | No | — | FK to projects.id (cascadeOnDelete) |
+| proposal_id | bigint unsigned, FK | No | — | FK to proposals.id (cascadeOnDelete) |
 | full_name | varchar(255) | No | — | Student full name |
 | registration_number | varchar(255) | No | — | Student registration number |
 | status | varchar(255) | No | active | Student status: active, withdrawn, completed |
@@ -213,23 +257,46 @@ described in CLAUDE.md's "Key Business Rules" and enforced by `Project::canBeMod
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `project_id` references projects.id, cascadeOnDelete.
+**Foreign keys:** `proposal_id` references proposals.id, cascadeOnDelete.
 
-### Table: project_documents
+Note: the old `project_students` table (and the old flat `projects` table, renamed to
+`projects_legacy` mid-migration) were dropped by `proposals:migrate-legacy-data`'s
+`dropLegacyTables()` step once it verified every row copied forward correctly — they no longer
+exist in the schema.
+
+### Table: project_lifecycle_status (added 2026-08-24, split)
+
+Backs `projects.status_id` (the Project lifecycle) — independent from `project_status` above
+(which backs `proposals.status_id`, the Proposal lifecycle). Same shape, different table, different
+meaning at the same ids.
 
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
-| id | bigint unsigned, PK | No | auto | Primary key |
-| project_id | bigint unsigned, FK | No | — | FK to projects.id (cascadeOnDelete) |
-| document_type | varchar(255) | No | — | e.g., "final_report" |
-| file_path | varchar(255) | No | — | Storage path |
-| approved_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) |
-| is_final | boolean | No | false | Whether this is the final version |
-| approved_at | timestamp | Yes | null | When it was approved |
+| id | tinyint unsigned, PK | No | auto | Primary key |
+| status_name | varchar(255), unique | No | — | Status identifier string |
+| sort_order | tinyint unsigned | No | 0 | Display order |
+| is_active | boolean | No | true | Active flag |
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `project_id` references projects.id (cascadeOnDelete), `approved_by` references users.id (nullOnDelete).
+**Seeded statuses (from ProjectLifecycleStatusSeeder):**
+
+| id | status_name | sort_order | is_active |
+|---|---|---|---|
+| 1 | قيد التنفيذ (in progress) | 1 | true |
+| 2 | مؤرشف (archived) | 2 | true |
+
+Note: `instantiateProject()` always creates a new project at id=1 (قيد التنفيذ) — see the
+"Flagged limitation" note under Major Changes above; there is currently no UI to move it to id=2.
+
+### Table: project_documents — DROPPED 2026-08-24 (split)
+
+Existed prior to the split (milestone document tracking). Dropped by migration
+`2026_08_24_160600_drop_project_documents_table.php` — the table was empty (0 rows) at the time of
+the split, confirmed via audit, so no data was lost. Milestone document tracking is not currently
+implemented anywhere in the split schema; STATUS_HISTORY and DEFENSE were audited codebase-wide
+prior to the 2026-08-17 lifecycle scope-down and confirmed to have never been implemented
+(planning docs only, no migration/model/controller) — nothing further to remove.
 
 ### Table: examiners
 

@@ -1,9 +1,10 @@
 <?php
 
 use App\Models\Department;
-use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
+use Database\Seeders\ProjectLifecycleStatusSeeder;
 use Database\Seeders\ProjectStatusSeeder;
 use Database\Seeders\RoleSeeder;
 use Spatie\Permission\PermissionRegistrar;
@@ -12,6 +13,26 @@ beforeEach(function () {
     app()[PermissionRegistrar::class]->forgetCachedPermissions();
     $this->seed(RoleSeeder::class);
 });
+
+/**
+ * Creates a مؤرشف Proposal in the given dept/spec and instantiates its
+ * linked Project — mirrors ReportTest.php::makeReportProject(). Used only
+ * to give the "cannot delete department/specialization that has projects"
+ * guards (Department::proposals()/Specialization::proposals()) something to
+ * trip on; the guard itself checks the proposals table.
+ */
+function makeDeptLinkedProject(Department $dept, Specialization $spec, User $supervisor): void
+{
+    $proposal = Proposal::factory()->create([
+        'department_id'     => $dept->id,
+        'specialization_id' => $spec->id,
+        'supervisor_id'     => $supervisor->id,
+        'status_id'         => Proposal::STATUS_ARCHIVED,
+        'is_deleted'        => false,
+    ]);
+
+    $proposal->instantiateProject($supervisor);
+}
 
 // ── Department visibility ─────────────────────────────────────────────────────
 
@@ -92,16 +113,13 @@ test('super_admin can delete empty department', function () {
 
 test('cannot delete department that has projects', function () {
     $this->seed(ProjectStatusSeeder::class);
+    $this->seed(ProjectLifecycleStatusSeeder::class);
 
     $dept = Department::factory()->create();
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $supervisor = userWithRole('supervisor');
 
-    Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $spec->id,
-        'supervisor_id'     => $supervisor->id,
-    ]);
+    makeDeptLinkedProject($dept, $spec, $supervisor);
 
     $this->actingAs(userWithRole('super_admin'))
         ->delete(route('departments.destroy', $dept))
@@ -153,16 +171,13 @@ test('specialization belongs to correct department', function () {
 
 test('cannot delete specialization that has projects', function () {
     $this->seed(ProjectStatusSeeder::class);
+    $this->seed(ProjectLifecycleStatusSeeder::class);
 
     $dept = Department::factory()->create();
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $supervisor = userWithRole('supervisor');
 
-    Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $spec->id,
-        'supervisor_id'     => $supervisor->id,
-    ]);
+    makeDeptLinkedProject($dept, $spec, $supervisor);
 
     $this->actingAs(userWithRole('super_admin'))
         ->delete(route('specializations.destroy', $spec))

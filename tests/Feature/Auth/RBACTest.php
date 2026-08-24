@@ -73,8 +73,12 @@ test('dept_staff can access projects create page', function () {
     $user = User::factory()->create();
     $user->assignRole('dept_staff');
 
+    // Project creation now lives under proposals — `projects.*` is thin
+    // (index/show only). Hitting the old `/projects/create` matches the
+    // surviving `projects/{id}` show route with $id = 'create' (a string),
+    // which 500s on ProjectController::show(int $id)'s type hint.
     $this->actingAs($user)
-        ->get('/projects/create')
+        ->get(route('proposals.create'))
         ->assertOk();
 });
 
@@ -83,6 +87,6 @@ test('viewer cannot access projects create page', function () {
     $user->assignRole('viewer');
 
     $this->actingAs($user)
-        ->get('/projects/create')
+        ->get(route('proposals.create'))
         ->assertForbidden();
 });

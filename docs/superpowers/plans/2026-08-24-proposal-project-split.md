@@ -2192,7 +2192,12 @@ class InstantiateProjectRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        $id = $this->route('proposal');
+        // Route param is named {id}, not {proposal} — this is a plain
+        // POST route (proposals/{id}/instantiate), not a resource route.
+        // Using the wrong key here silently resolves to null and makes
+        // authorize() fail closed for everyone, including super_admin —
+        // caught live by Task 5's TDD (found and fixed 2026-08-24).
+        $id = $this->route('id');
 
         if ($id === null) {
             return false;

@@ -3,25 +3,23 @@
 namespace App\Services;
 
 use App\Models\Department;
-use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 
 class SearchService
 {
-    private const STATUS_ARCHIVED = 1;
-
-    public function searchProjects(array $filters): LengthAwarePaginator
+    public function searchProposals(array $filters): LengthAwarePaginator
     {
-        $query = Project::with(['department', 'specialization', 'supervisor', 'currentStatus'])
+        $query = Proposal::with(['department', 'specialization', 'supervisor', 'status'])
             ->withCount('students')
             ->where('is_deleted', false);
 
         if (! empty($filters['search'])) {
             $search = $filters['search'];
             $query->where(function ($q) use ($search) {
-                $q->where('project_title', 'like', "%{$search}%")
+                $q->where('title', 'like', "%{$search}%")
                   ->orWhere('description', 'like', "%{$search}%");
             });
         }
@@ -42,33 +40,26 @@ class SearchService
             $query->where('supervisor_id', $filters['supervisor_id']);
         }
 
-        // 'active' restricts to published (archived) projects only
         if (! empty($filters['status']) && $filters['status'] === 'active') {
-            $query->where('current_status_id', self::STATUS_ARCHIVED);
+            $query->where('status_id', Proposal::STATUS_ARCHIVED);
         }
 
         $sort = $filters['sort'] ?? 'created_at';
         match ($sort) {
-            'title'       => $query->orderBy('project_title'),
-            'visit_count' => $query->orderByDesc('visit_count'),
-            default       => $query->latest(),
+            'title' => $query->orderBy('title'),
+            default => $query->latest(),
         };
 
         return $query->paginate(15)->withQueryString();
     }
 
-    /**
-     * Find projects with a similar title using a LIKE query.
-     * Excludes $excludeId when checking an existing project being edited.
-     *
-     * @return Collection<int, Project>
-     */
+    /** @return Collection<int, Proposal> */
     public function detectSimilarity(string $title, ?int $excludeId = null): Collection
     {
-        $query = Project::where('is_deleted', false)
-            ->where('project_title', 'like', '%' . $title . '%')
+        $query = Proposal::where('is_deleted', false)
+            ->where('title', 'like', '%' . $title . '%')
             ->with('department:id,name')
-            ->select(['id', 'project_title', 'academic_year', 'department_id']);
+            ->select(['id', 'title', 'academic_year', 'department_id']);
 
         if ($excludeId !== null) {
             $query->where('id', '!=', $excludeId);
@@ -77,16 +68,13 @@ class SearchService
         return $query->limit(5)->get();
     }
 
-    /**
-     * Return all data needed to populate the filter dropdowns.
-     */
     public function getFilterOptions(): array
     {
         return [
             'departments'    => Department::with('specializations:id,name,department_id')
                                           ->orderBy('name')
                                           ->get(['id', 'name']),
-            'academic_years' => Project::where('is_deleted', false)
+            'academic_years' => Proposal::where('is_deleted', false)
                                         ->distinct()
                                         ->orderByDesc('academic_year')
                                         ->pluck('academic_year'),

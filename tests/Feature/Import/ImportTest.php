@@ -4,6 +4,7 @@ use App\Imports\ProjectsImport;
 use App\Models\Department;
 use App\Models\Project;
 use App\Models\Specialization;
+use Database\Seeders\ProjectLifecycleStatusSeeder;
 use Database\Seeders\ProjectStatusSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Http\UploadedFile;
@@ -16,6 +17,7 @@ beforeEach(function () {
     app()[PermissionRegistrar::class]->forgetCachedPermissions();
     $this->seed(RoleSeeder::class);
     $this->seed(ProjectStatusSeeder::class);
+    $this->seed(ProjectLifecycleStatusSeeder::class);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -159,12 +161,16 @@ test('valid row creates project successfully', function () {
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([validImportRow($deps)]));
 
-    $this->assertDatabaseHas('projects', [
-        'project_title'     => 'Test Import Project',
-        'academic_year'     => '2023/2024',
-        'current_status_id' => 1, // archived
-        'is_deleted'        => false,
+    $this->assertDatabaseHas('proposals', [
+        'title'         => 'Test Import Project',
+        'academic_year' => '2023/2024',
+        'is_deleted'    => false,
     ]);
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
+    expect($project)->not->toBeNull()
+        ->and($project->status_id)->toBe(Project::STATUS_ARCHIVED) // final_score present → archived
+        ->and($project->is_deleted)->toBeFalse();
 
     expect($import->getSummary()['success_count'])->toBe(1);
 });
@@ -245,9 +251,9 @@ test('multiple students in one row are created correctly', function () {
         'student_3_reg'  => 'ST003',
     ])]));
 
-    $project = Project::where('project_title', 'Test Import Project')->first();
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
     expect($project)->not->toBeNull()
-        ->and($project->students()->count())->toBe(3);
+        ->and($project->proposal->students()->count())->toBe(3);
 });
 
 test('empty student slots are skipped not treated as errors', function () {
@@ -262,9 +268,9 @@ test('empty student slots are skipped not treated as errors', function () {
         'student_3_reg'  => '',
     ])]));
 
-    $project = Project::where('project_title', 'Test Import Project')->first();
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
     expect($project)->not->toBeNull()
-        ->and($project->students()->count())->toBe(1);
+        ->and($project->proposal->students()->count())->toBe(1);
 
     expect($import->getSummary()['failed_count'])->toBe(0);
 });

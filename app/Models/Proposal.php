@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 
 class Proposal extends Model
 {
+    use HasFactory;
+
     public const STATUS_ARCHIVED = 1;
     public const STATUS_PENDING  = 2;
 

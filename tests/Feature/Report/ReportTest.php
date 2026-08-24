@@ -2,8 +2,10 @@
 
 use App\Models\Department;
 use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
+use Database\Seeders\ProjectLifecycleStatusSeeder;
 use Database\Seeders\ProjectStatusSeeder;
 use Database\Seeders\RoleSeeder;
 use Spatie\Permission\PermissionRegistrar;
@@ -12,10 +14,19 @@ beforeEach(function () {
     app()[PermissionRegistrar::class]->forgetCachedPermissions();
     $this->seed(RoleSeeder::class);
     $this->seed(ProjectStatusSeeder::class);
+    $this->seed(ProjectLifecycleStatusSeeder::class);
 });
 
-// ── Helper ──────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Creates a (مؤرشف) Proposal with the given dept/spec/supervisor and
+ * instantiates its linked Project, mirroring what the old flat
+ * Project::factory()->create([...]) fixture used to produce in one call.
+ * `final_score`, if present in $overrides, is applied to the Project after
+ * instantiation (it isn't a Proposal column). Every other override key is
+ * passed straight through to the Proposal (e.g. academic_year).
+ */
 function makeReportProject(
     ?Department $dept = null,
     ?Specialization $spec = null,
@@ -26,13 +37,36 @@ function makeReportProject(
     $spec       ??= Specialization::factory()->create(['department_id' => $dept->id]);
     $supervisor ??= userWithRole('supervisor');
 
-    return Project::factory()->create(array_merge([
+    $finalScore = $overrides['final_score'] ?? null;
+    unset($overrides['final_score']);
+
+    $proposal = Proposal::factory()->create(array_merge([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $supervisor->id,
+        'status_id'         => Proposal::STATUS_ARCHIVED,
         'is_deleted'        => false,
-        'current_status_id' => 1,
     ], $overrides));
+
+    $project = $proposal->instantiateProject($supervisor);
+
+    if ($finalScore !== null) {
+        $project->update(['final_score' => $finalScore]);
+    }
+
+    return $project;
+}
+
+/**
+ * Side-effect-only version of makeReportProject() for call sites that used
+ * to do Project::factory()->count($n)->create([...]) — just makes $count
+ * rows exist with the given shared attributes.
+ */
+function makeReportProjects(int $count, Department $dept, Specialization $spec, User $supervisor, array $overrides = []): void
+{
+    for ($i = 0; $i < $count; $i++) {
+        makeReportProject($dept, $spec, $supervisor, $overrides);
+    }
 }
 
 // ── 1. Dashboard — super_admin ─────────────────────────────────────────────────
@@ -42,13 +76,7 @@ test('super_admin can view full dashboard stats', function () {
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $sup  = userWithRole('supervisor');
 
-    Project::factory()->count(3)->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $spec->id,
-        'supervisor_id'     => $sup->id,
-        'is_deleted'        => false,
-        'current_status_id' => 1,
-    ]);
+    makeReportProjects(3, $dept, $spec, $sup);
 
     $this->actingAs(userWithRole('super_admin'))
         ->get(route('dashboard'))
@@ -73,13 +101,7 @@ test('dept_manager sees only their department stats', function () {
     $manager = userWithRole('dept_manager');
     $manager->update(['department_id' => $dept->id]);
 
-    Project::factory()->count(2)->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $spec->id,
-        'supervisor_id'     => $sup->id,
-        'is_deleted'        => false,
-        'current_status_id' => 1,
-    ]);
+    makeReportProjects(2, $dept, $spec, $sup);
 
     $this->actingAs($manager)
         ->get(route('dashboard'))
@@ -174,20 +196,8 @@ test('specialization report returns top 10 correctly', function () {
     $specB = Specialization::factory()->create(['department_id' => $dept->id]);
     $specC = Specialization::factory()->create(['department_id' => $dept->id]);
 
-    Project::factory()->count(3)->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $specA->id,
-        'supervisor_id'     => $sup->id,
-        'is_deleted'        => false,
-        'current_status_id' => 1,
-    ]);
-    Project::factory()->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $specB->id,
-        'supervisor_id'     => $sup->id,
-        'is_deleted'        => false,
-        'current_status_id' => 1,
-    ]);
+    makeReportProjects(3, $dept, $specA, $sup);
+    makeReportProject($dept, $specB, $sup);
 
     $this->actingAs(userWithRole('dept_manager'))
         ->get(route('reports.specializations'))
@@ -228,22 +238,8 @@ test('yearly report shows correct growth percentage', function () {
     $sup  = userWithRole('supervisor');
 
     // 4 projects in 2022/2023 → 8 in 2023/2024 → growth = 100%
-    Project::factory()->count(4)->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $spec->id,
-        'supervisor_id'     => $sup->id,
-        'is_deleted'        => false,
-        'current_status_id' => 1,
-        'academic_year'     => '2022/2023',
-    ]);
-    Project::factory()->count(8)->create([
-        'department_id'     => $dept->id,
-        'specialization_id' => $spec->id,
-        'supervisor_id'     => $sup->id,
-        'is_deleted'        => false,
-        'current_status_id' => 1,
-        'academic_year'     => '2023/2024',
-    ]);
+    makeReportProjects(4, $dept, $spec, $sup, ['academic_year' => '2022/2023']);
+    makeReportProjects(8, $dept, $spec, $sup, ['academic_year' => '2023/2024']);
 
     $this->actingAs(userWithRole('dept_manager'))
         ->get(route('reports.yearly'))

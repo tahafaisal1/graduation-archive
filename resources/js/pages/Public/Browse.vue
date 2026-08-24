@@ -6,12 +6,15 @@ import { ref, watch, computed } from 'vue';
 interface Department { id: number; name: string; }
 interface Specialization { id: number; name: string; department_id: number; }
 interface Student { id: number; full_name: string; registration_number: string; }
-interface Project {
-    id: number;
-    project_title: string;
+interface Proposal {
+    title: string;
     academic_year: string;
     department: Department | null;
     specialization: Specialization | null;
+}
+interface Project {
+    id: number;
+    proposal: Proposal;
     supervisor: { id: number; name: string } | null;
     students: Student[];
 }
@@ -147,18 +150,18 @@ function resetFilters() {
                     class="bg-surface border border-border rounded-xl p-5 hover:border-primary/40 hover:shadow-md transition-all duration-200 flex flex-col"
                 >
                     <h2 class="font-display font-bold text-base text-text-dark mb-3 line-clamp-2 leading-snug">
-                        {{ project.project_title }}
+                        {{ project.proposal.title }}
                     </h2>
                     <div class="flex flex-wrap gap-2 mb-3">
                         <span class="inline-block bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full font-medium">
-                            {{ project.department?.name ?? '—' }}
+                            {{ project.proposal.department?.name ?? '—' }}
                         </span>
                         <span class="inline-block bg-primary-light/15 text-primary-dark text-xs px-2 py-0.5 rounded-full font-medium">
-                            {{ project.specialization?.name ?? '—' }}
+                            {{ project.proposal.specialization?.name ?? '—' }}
                         </span>
                     </div>
                     <div class="text-xs text-text-muted space-y-1 mb-4 flex-1">
-                        <p>السنة الدراسية: <span class="text-text-dark font-medium">{{ project.academic_year }}</span></p>
+                        <p>السنة الدراسية: <span class="text-text-dark font-medium">{{ project.proposal.academic_year }}</span></p>
                         <p>المشرف: <span class="text-text-dark font-medium">{{ project.supervisor?.name ?? '—' }}</span></p>
                         <p>عدد الطلبة: <span class="text-text-dark font-medium">{{ project.students.length }}</span></p>
                     </div>

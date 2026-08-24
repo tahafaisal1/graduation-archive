@@ -15,13 +15,13 @@ interface Student        { id: number; full_name: string }
 
 interface Project {
     id: number;
-    project_title: string;
+    title: string;
     academic_year: string;
     description: string | null;
     department: Department | null;
     specialization: Specialization | null;
     supervisor: Supervisor | null;
-    current_status: ProjectStatus | null;
+    status: ProjectStatus | null;
     students: Student[];
     students_count: number;
 }
@@ -186,13 +186,13 @@ function highlight(text: string): string {
                         <a
                             v-for="project in deptProjects"
                             :key="project.id"
-                            :href="route('projects.show', [project.id])"
+                            :href="route('proposals.show', [project.id])"
                             class="block rounded-lg border border-gray-200 bg-white p-4 transition hover:border-blue-300 hover:shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-700"
                         >
                             <!-- Title with highlight -->
                             <p
                                 class="text-sm font-semibold text-blue-600 dark:text-blue-400"
-                                v-html="highlight(project.project_title)"
+                                v-html="highlight(project.title)"
                             />
 
                             <!-- Meta row -->

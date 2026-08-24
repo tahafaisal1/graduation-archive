@@ -17,21 +17,35 @@ class MigrateProposalProjectData extends Command
 
     public function handle(): int
     {
-        DB::transaction(function () {
+        // Everything inside this closure is plain DML (insert/update/delete)
+        // — genuinely atomic. DDL (below, outside the closure) is
+        // deliberately excluded: MySQL/MariaDB implicitly commits the
+        // current transaction the instant a DDL statement runs, which
+        // silently ends the transaction out from under Laravel's own
+        // bookkeeping — confirmed live: running ALTER TABLE / Schema::table()
+        // ->foreign() inside DB::transaction() causes Laravel's own closing
+        // ->commit() call to throw "There is no active transaction" even
+        // when every operation succeeded, because MariaDB already closed
+        // the transaction earlier. Keeping DDL out here makes the
+        // transaction boundary honest about what it actually protects.
+        $idMap = DB::transaction(function () {
             $this->cleanErroneousGrading();
             $idMap = $this->migrateProposals();
             $this->migrateProposalStudents();
             $newProjectIds = $this->instantiateProjectsForArchivedRows($idMap);
             $this->repointExaminersAndEvaluations($newProjectIds);
-            $this->restoreExaminerEvaluationForeignKeys();
             $this->repointBasedOnChains($newProjectIds);
+
+            return $idMap;
         });
+
+        $this->fixProposalsAutoIncrement(empty($idMap) ? 0 : max($idMap));
+        $this->restoreExaminerEvaluationForeignKeys();
 
         $this->verifyCounts();
 
-        // DDL below is deliberately outside the transaction (MySQL DDL
-        // auto-commits and cannot be rolled back with it anyway) and only
-        // runs once verifyCounts() has confirmed the data copy succeeded.
+        // DDL below only runs once verifyCounts() has confirmed the data
+        // copy succeeded.
         $this->dropLegacyTables();
 
         return self::SUCCESS;
@@ -88,15 +102,14 @@ class MigrateProposalProjectData extends Command
             $idMap[$row->id] = $row->id;
         }
 
-        $this->fixProposalsAutoIncrement((int) ($rows->max('id') ?? 0));
-
         return $idMap;
     }
 
     /**
      * Keep `proposals`' auto-increment counter ahead of the highest
      * preserved legacy id, so the next real (non-migrated) proposal doesn't
-     * collide with one of these ids.
+     * collide with one of these ids. Called from handle() AFTER the DML
+     * transaction commits (see handle()'s comment) — this is DDL.
      *
      * SQLite has no ALTER TABLE ... AUTO_INCREMENT statement (nor does it
      * accept MySQL's syntax at all — it's a hard parse error, not just a
@@ -117,7 +130,12 @@ class MigrateProposalProjectData extends Command
             return;
         }
 
-        DB::statement('ALTER TABLE proposals AUTO_INCREMENT = ?', [$maxId + 1]);
+        // MariaDB/MySQL's ALTER TABLE does not accept a bound parameter for
+        // AUTO_INCREMENT's value (confirmed live: "SQLSTATE[42000]... near
+        // '?'" — this is DDL, not DML, and the value isn't a normal bind
+        // position). $maxId is derived from MAX(id) on our own table, never
+        // user input, so inlining it is safe.
+        DB::statement('ALTER TABLE proposals AUTO_INCREMENT = ' . ($maxId + 1));
     }
 
     private function migrateProposalStudents(): void
@@ -217,7 +235,7 @@ class MigrateProposalProjectData extends Command
         $this->info("proposals: {$proposals}, projects: {$projects}");
 
         if ($proposals === 0) {
-            throw new \RuntimeException('Migration produced zero proposals — aborting, transaction will roll back.');
+            throw new \RuntimeException('Migration produced zero proposals — aborting before dropping legacy tables.');
         }
     }
 

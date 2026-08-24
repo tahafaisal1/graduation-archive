@@ -23,6 +23,6 @@ export function isProposalStatus(name?: string | null) {
     return name === STATUS_PROPOSAL;
 }
 
-export function useProjectStatus() {
+export function useProposalStatus() {
     return { STATUS_ARCHIVED, STATUS_PROPOSAL, statusColor, statusLabel, isProposalStatus };
 }

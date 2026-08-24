@@ -18,8 +18,8 @@ class Specialization extends Model
         return $this->belongsTo(Department::class);
     }
 
-    public function projects(): HasMany
+    public function proposals(): HasMany
     {
-        return $this->hasMany(Project::class);
+        return $this->hasMany(Proposal::class);
     }
 }

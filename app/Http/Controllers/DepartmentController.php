@@ -66,7 +66,7 @@ class DepartmentController extends Controller
 
     public function destroy(Department $department)
     {
-        if ($department->projects()->exists()) {
+        if ($department->proposals()->exists()) {
             return back()->with('error', 'لا يمكن حذف القسم لوجود مشاريع مرتبطة به');
         }
 

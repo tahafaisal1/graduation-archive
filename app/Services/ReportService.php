@@ -4,39 +4,38 @@ namespace App\Services;
 
 use App\Models\Department;
 use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
 
 class ReportService
 {
-    private const STATUS_PROPOSAL = 2; // مقترح — see Project::STATUS_PENDING
-
     public function getDashboardStats(): array
     {
         $currentYear = now()->year;
 
         return [
-            'total_projects'     => Project::where('is_deleted', false)->count(),
+            'total_projects'     => Proposal::where('is_deleted', false)->count(),
             'total_departments'  => Department::count(),
-            'projects_this_year' => Project::where('is_deleted', false)
+            'projects_this_year' => Proposal::where('is_deleted', false)
                 ->where('academic_year', 'like', "%{$currentYear}%")
                 ->count(),
-            'pending_approvals'  => Project::where('is_deleted', false)
-                ->where('current_status_id', self::STATUS_PROPOSAL)
+            'pending_approvals'  => Proposal::where('is_deleted', false)
+                ->where('status_id', Proposal::STATUS_PENDING)
                 ->count(),
-            'recent_projects'    => Project::with([
+            'recent_projects'    => Proposal::with([
                     'department:id,name',
                     'specialization:id,name',
-                    'currentStatus:id,status_name',
+                    'status:id,status_name',
                 ])
                 ->where('is_deleted', false)
                 ->latest()
                 ->limit(5)
-                ->get(['id', 'project_title', 'academic_year', 'department_id', 'specialization_id', 'current_status_id', 'created_at']),
-            'by_status'          => Project::where('is_deleted', false)
-                ->join('project_status', 'projects.current_status_id', '=', 'project_status.id')
+                ->get(['id', 'title', 'academic_year', 'department_id', 'specialization_id', 'status_id', 'created_at']),
+            'by_status'          => Proposal::where('is_deleted', false)
+                ->join('project_status', 'proposals.status_id', '=', 'project_status.id')
                 ->groupBy('project_status.id', 'project_status.status_name')
-                ->selectRaw('project_status.status_name, COUNT(projects.id) as count')
+                ->selectRaw('project_status.status_name, COUNT(proposals.id) as count')
                 ->get(),
         ];
     }
@@ -44,27 +43,29 @@ class ReportService
     public function getDepartmentReport(?int $departmentId = null): array
     {
         $departments = Department::withCount([
-                'projects as project_count' => fn ($q) => $q->where('is_deleted', false),
+                'proposals as project_count' => fn ($q) => $q->where('is_deleted', false),
             ])
             ->with([
                 'specializations' => fn ($q) => $q->withCount([
-                    'projects as project_count' => fn ($q2) => $q2->where('is_deleted', false),
+                    'proposals as project_count' => fn ($q2) => $q2->where('is_deleted', false),
                 ]),
             ])
             ->when($departmentId, fn ($q) => $q->where('id', $departmentId))
             ->get(['id', 'name', 'code']);
 
-        $avgScores = Project::where('is_deleted', false)
-            ->whereNotNull('final_score')
-            ->when($departmentId, fn ($q) => $q->where('department_id', $departmentId))
-            ->groupBy('department_id')
-            ->selectRaw('department_id, ROUND(AVG(final_score), 2) as avg_score, COUNT(*) as scored_count')
+        $avgScores = Project::query()
+            ->join('proposals', 'projects.proposal_id', '=', 'proposals.id')
+            ->where('projects.is_deleted', false)
+            ->whereNotNull('projects.final_score')
+            ->when($departmentId, fn ($q) => $q->where('proposals.department_id', $departmentId))
+            ->groupBy('proposals.department_id')
+            ->selectRaw('proposals.department_id, ROUND(AVG(projects.final_score), 2) as avg_score, COUNT(*) as scored_count')
             ->get()
             ->keyBy('department_id');
 
         $supervisors = User::role('supervisor')
             ->withCount([
-                'supervisedProjects as project_count' => fn ($q) => $q
+                'supervisedProposals as project_count' => fn ($q) => $q
                     ->where('is_deleted', false)
                     ->when($departmentId, fn ($q2) => $q2->where('department_id', $departmentId)),
             ])
@@ -99,7 +100,7 @@ class ReportService
     public function getSpecializationTrends(): array
     {
         $top = Specialization::withCount([
-                'projects as project_count' => fn ($q) => $q->where('is_deleted', false),
+                'proposals as project_count' => fn ($q) => $q->where('is_deleted', false),
             ])
             ->with('department:id,name')
             ->orderByDesc('project_count')
@@ -107,18 +108,18 @@ class ReportService
             ->get(['id', 'name', 'department_id']);
 
         $rare = Specialization::withCount([
-                'projects as project_count' => fn ($q) => $q->where('is_deleted', false),
+                'proposals as project_count' => fn ($q) => $q->where('is_deleted', false),
             ])
             ->with('department:id,name')
             ->orderBy('project_count')
             ->limit(5)
             ->get(['id', 'name', 'department_id']);
 
-        $byYear = Project::where('is_deleted', false)
-            ->join('specializations', 'projects.specialization_id', '=', 'specializations.id')
-            ->groupBy('specializations.id', 'specializations.name', 'projects.academic_year')
-            ->selectRaw('specializations.id, specializations.name as spec_name, projects.academic_year, COUNT(projects.id) as count')
-            ->orderBy('projects.academic_year')
+        $byYear = Proposal::where('is_deleted', false)
+            ->join('specializations', 'proposals.specialization_id', '=', 'specializations.id')
+            ->groupBy('specializations.id', 'specializations.name', 'proposals.academic_year')
+            ->selectRaw('specializations.id, specializations.name as spec_name, proposals.academic_year, COUNT(proposals.id) as count')
+            ->orderBy('proposals.academic_year')
             ->get()
             ->groupBy('id')
             ->map(fn ($items) => $items->values());
@@ -135,19 +136,21 @@ class ReportService
         $supervisors = User::role('supervisor')
             ->with('department:id,name')
             ->withCount([
-                'supervisedProjects as project_count' => fn ($q) => $q->where('is_deleted', false),
+                'supervisedProposals as project_count' => fn ($q) => $q->where('is_deleted', false),
             ])
             ->orderByDesc('project_count')
             ->get(['id', 'name', 'department_id']);
 
-        $avgScores = Project::where('is_deleted', false)
-            ->whereNotNull('final_score')
-            ->groupBy('supervisor_id')
-            ->selectRaw('supervisor_id, ROUND(AVG(final_score), 2) as avg_score, COUNT(*) as scored_count')
+        $avgScores = Project::query()
+            ->join('proposals', 'projects.proposal_id', '=', 'proposals.id')
+            ->where('projects.is_deleted', false)
+            ->whereNotNull('projects.final_score')
+            ->groupBy('proposals.supervisor_id')
+            ->selectRaw('proposals.supervisor_id, ROUND(AVG(projects.final_score), 2) as avg_score, COUNT(*) as scored_count')
             ->get()
             ->keyBy('supervisor_id');
 
-        $byYear = Project::where('is_deleted', false)
+        $byYear = Proposal::where('is_deleted', false)
             ->groupBy('supervisor_id', 'academic_year')
             ->selectRaw('supervisor_id, academic_year, COUNT(*) as count')
             ->orderBy('academic_year')
@@ -175,7 +178,7 @@ class ReportService
 
     public function getYearlyComparisonReport(): array
     {
-        $perYear = Project::where('is_deleted', false)
+        $perYear = Proposal::where('is_deleted', false)
             ->groupBy('academic_year')
             ->selectRaw('academic_year, COUNT(*) as count')
             ->orderBy('academic_year')
@@ -194,11 +197,11 @@ class ReportService
             ];
         });
 
-        $deptByYear = Project::where('is_deleted', false)
-            ->join('departments', 'projects.department_id', '=', 'departments.id')
-            ->groupBy('projects.academic_year', 'departments.id', 'departments.name')
-            ->selectRaw('projects.academic_year, departments.id as department_id, departments.name as department_name, COUNT(projects.id) as count')
-            ->orderBy('projects.academic_year')
+        $deptByYear = Proposal::where('is_deleted', false)
+            ->join('departments', 'proposals.department_id', '=', 'departments.id')
+            ->groupBy('proposals.academic_year', 'departments.id', 'departments.name')
+            ->selectRaw('proposals.academic_year, departments.id as department_id, departments.name as department_name, COUNT(proposals.id) as count')
+            ->orderBy('proposals.academic_year')
             ->get()
             ->groupBy('academic_year')
             ->map(fn ($items) => $items->values());

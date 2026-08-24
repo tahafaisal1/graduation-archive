@@ -6,7 +6,8 @@ use App\Models\Department;
 use App\Models\Evaluation;
 use App\Models\Examiner;
 use App\Models\Project;
-use App\Models\ProjectStudent;
+use App\Models\Proposal;
+use App\Models\ProposalStudent;
 use App\Models\Specialization;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -24,7 +25,7 @@ class DummyDataSeeder extends Seeder
             $specializations = $this->createSpecializations($departments);
             [$managers, $supervisors, $staffs] = $this->createUsers($departments);
             $examiners    = $this->createExaminers($departments);
-            $projectCount = $this->createProjects($departments, $specializations, $supervisors, $managers, $examiners);
+            $projectCount = $this->createProposalsAndProjects($departments, $specializations, $supervisors, $managers, $examiners);
 
             $specCount = array_sum(array_map('count', $specializations));
             $userCount = count($managers) + count($supervisors) + count($staffs);
@@ -191,7 +192,7 @@ class DummyDataSeeder extends Seeder
         return $examiners;
     }
 
-    private function createProjects(
+    private function createProposalsAndProjects(
         array $departments,
         array $specializations,
         array $supervisors,
@@ -274,7 +275,8 @@ class DummyDataSeeder extends Seeder
 
         $pairCounters = ['SW' => 0, 'NET' => 0, 'ELEC' => 0];
         $supvCounters = ['SW' => 0, 'NET' => 0, 'ELEC' => 0];
-        $createdProjects = [];
+        $createdProposals = [];
+        $createdProjects  = [];
 
         foreach ($projectDefs as $def) {
             $code = $def['dept'];
@@ -283,34 +285,35 @@ class DummyDataSeeder extends Seeder
 
             $supervisor = $supervisors[$code][$supvCounters[$code]++ % 2];
 
-            $project = Project::create([
-                'project_title'     => $def['title'],
+            $proposal = Proposal::create([
+                'title'             => $def['title'],
                 'description'       => $this->specDescription($def['spec']),
                 'academic_year'     => $def['year'],
                 'department_id'     => $dept->id,
                 'specialization_id' => $spec->id,
                 'supervisor_id'     => $supervisor->id,
-                'current_status_id' => $def['status'],
-                'final_score'       => $def['score'],
-                'visit_count'       => $def['visits'],
+                'status_id'         => $def['status'],
                 'is_deleted'        => false,
             ]);
 
-            // 2–4 students per project
             $studentCount = rand(2, 4);
             $yearPrefix   = substr($def['year'], 0, 4);
             for ($s = 0; $s < $studentCount; $s++) {
                 $this->studentCounter++;
-                ProjectStudent::create([
-                    'project_id'          => $project->id,
+                ProposalStudent::create([
+                    'proposal_id'         => $proposal->id,
                     'full_name'           => $arabicNames[$this->studentCounter % count($arabicNames)],
                     'registration_number' => $yearPrefix . str_pad($this->studentCounter, 5, '0', STR_PAD_LEFT),
                     'status'              => 'active',
                 ]);
             }
 
-            // Assign 2 examiners + evaluations for scored projects
-            if ($def['score'] !== null) {
+            $project = null;
+            if ($def['status'] === 1) { // مؤرشف — instantiate its project, matching the live-data-migration end state
+                $project = $proposal->instantiateProject($managers[$code]);
+            }
+
+            if ($project !== null && $def['score'] !== null) {
                 $pairs = $examinerPairs[$code];
                 $pair  = $pairs[$pairCounters[$code]++ % count($pairs)];
                 $ex1   = $examiners[$code][$pair[0]];
@@ -323,20 +326,24 @@ class DummyDataSeeder extends Seeder
 
                 Evaluation::create(['project_id' => $project->id, 'examiner_id' => $ex1->id, 'notes' => $comments[array_rand($comments)]]);
                 Evaluation::create(['project_id' => $project->id, 'examiner_id' => $ex2->id, 'notes' => $comments[array_rand($comments)]]);
+
+                $project->update(['final_score' => $def['score'], 'status_id' => Project::STATUS_ARCHIVED]);
             }
 
-            $createdProjects[] = $project;
+            $project?->update(['visit_count' => $def['visits']]);
+
+            $createdProposals[] = $proposal;
+            $createdProjects[]  = $project;
         }
 
-        // 3 project evolutions: link based_on_project_id
-        // index 6 (تحليل المشاعر) evolves from index 5 (التعرف على الوجوه) — both SW AI
-        $createdProjects[6]->update(['based_on_project_id' => $createdProjects[5]->id]);
-        // index 8 (تحسين أداء DB) evolves from index 7 (DB الموزعة) — both SW Database
-        $createdProjects[8]->update(['based_on_project_id' => $createdProjects[7]->id]);
-        // index 22 (معالجة الإشارات) evolves from index 20 (دائرة الترميز) — both ELEC Digital
-        $createdProjects[22]->update(['based_on_project_id' => $createdProjects[20]->id]);
+        // 3 project evolutions: a new proposal building on a previously
+        // instantiated project (decision 6 — based_on_project_id points at
+        // projects.id, not another proposal).
+        $createdProposals[6]->update(['based_on_project_id' => $createdProjects[5]->id]);
+        $createdProposals[8]->update(['based_on_project_id' => $createdProjects[7]->id]);
+        $createdProposals[22]->update(['based_on_project_id' => $createdProjects[20]->id]);
 
-        return count($createdProjects);
+        return count($createdProposals);
     }
 
     private function specDescription(string $specName): string

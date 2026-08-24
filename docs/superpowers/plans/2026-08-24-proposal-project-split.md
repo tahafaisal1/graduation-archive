@@ -36,8 +36,6 @@
 - `database/migrations/2026_08_24_160400_rename_projects_to_projects_legacy.php`
 - `database/migrations/2026_08_24_160500_create_new_projects_table.php`
 - `database/migrations/2026_08_24_160600_drop_project_documents_table.php`
-- `database/migrations/2026_08_24_161000_drop_project_students_legacy_table.php` (run after the data command)
-- `database/migrations/2026_08_24_161100_drop_projects_legacy_table.php` (run after the data command)
 - `database/seeders/ProjectLifecycleStatusSeeder.php`
 - `app/Console/Commands/MigrateProposalProjectData.php`
 - `app/Models/Proposal.php`
@@ -893,9 +891,9 @@ git commit -m "feat: add Proposal model + instantiateProject(), rebuild Project 
 
 **Files:**
 - Create: `app/Console/Commands/MigrateProposalProjectData.php`
-- Create: `database/migrations/2026_08_24_161000_drop_project_students_legacy_table.php`
-- Create: `database/migrations/2026_08_24_161100_drop_projects_legacy_table.php`
 - Test: `tests/Feature/Console/MigrateProposalProjectDataTest.php`
+
+**Ruling (pre-flight, before dispatch):** the plan originally had the `project_students`/`projects_legacy` table drops as two separately-dated migration files. That's a defect: Pest's `RefreshDatabase` runs every migration file in the migrations directory, in order, for every test — including these two — with no way to pause and run the data-migration *command* in between as intended. In the test DB, `projects_legacy` would already be dropped before this task's own test ever gets to insert fixture rows into it. Fix: the command itself drops both legacy tables at the end of `handle()`, after `verifyCounts()` confirms success — no separate migration files. This also matches Step B.7's actual intent ("drop the old table... as part of the migration process") better than two more dated files would have.
 
 **Interfaces:**
 - Consumes: `projects_legacy`, `project_students` (old), `project_examiners`, `evaluations` (values still pointing at old ids at this point), `proposals`/`projects` (empty, from Task 1).
@@ -1070,6 +1068,11 @@ class MigrateProposalProjectData extends Command
 
         $this->verifyCounts();
 
+        // DDL below is deliberately outside the transaction (MySQL DDL
+        // auto-commits and cannot be rolled back with it anyway) and only
+        // runs once verifyCounts() has confirmed the data copy succeeded.
+        $this->dropLegacyTables();
+
         return self::SUCCESS;
     }
 
@@ -1214,6 +1217,13 @@ class MigrateProposalProjectData extends Command
             throw new \RuntimeException('Migration produced zero proposals — aborting, transaction will roll back.');
         }
     }
+
+    private function dropLegacyTables(): void
+    {
+        \Illuminate\Support\Facades\Schema::dropIfExists('project_students');
+        \Illuminate\Support\Facades\Schema::dropIfExists('projects_legacy');
+        $this->info('Dropped legacy tables: project_students, projects_legacy.');
+    }
 }
 ```
 
@@ -1249,80 +1259,12 @@ echo 'orphan examiners (project_id not in projects): ' . DB::table('project_exam
 echo 'orphan evaluations: ' . DB::table('evaluations')->whereNotIn('project_id', DB::table('projects')->pluck('id'))->count() . PHP_EOL;
 "
 ```
-Expected: `proposals: 25`, `projects: 20`, `project_examiners: 34` (17 graded rows × 2, unchanged from pre-migration minus id=1's 2 cleaned), `evaluations: 34` (17 × 2, minus id=1's 2 cleaned), both orphan counts `0`.
+Expected: `proposals: 25`, `projects: 20`, `project_examiners: 34` (17 graded rows × 2, unchanged from pre-migration minus id=1's 2 cleaned), `evaluations: 34` (17 × 2, minus id=1's 2 cleaned), both orphan counts `0`. The command's own last line of output should also confirm `Dropped legacy tables: project_students, projects_legacy.` — by this point `projects_legacy`/`project_students` no longer exist; re-verify the counts above via the `proposals`/`projects` tables only.
 
-- [ ] **Step 6: Once counts are confirmed, run the cleanup migrations**
-
-`database/migrations/2026_08_24_161000_drop_project_students_legacy_table.php`:
-```php
-<?php
-
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-
-return new class extends Migration
-{
-    // Irreversible once run against the live DB: data has already been
-    // copied into proposal_students by the data-migration command — down()
-    // recreates the table shape but cannot restore its data if this runs
-    // before that command (this migration must only run AFTER the command
-    // has been confirmed successful, per Step 5 above).
-    public function up(): void
-    {
-        Schema::dropIfExists('project_students');
-    }
-
-    public function down(): void
-    {
-        Schema::create('project_students', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('project_id')->constrained('projects_legacy')->cascadeOnDelete();
-            $table->string('full_name');
-            $table->string('registration_number');
-            $table->string('status')->default('active');
-            $table->date('withdrawal_date')->nullable();
-            $table->timestamps();
-        });
-    }
-};
-```
-
-`database/migrations/2026_08_24_161100_drop_projects_legacy_table.php`:
-```php
-<?php
-
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\Schema;
-
-return new class extends Migration
-{
-    // Irreversible once run against the live DB, same reasoning as the
-    // sibling migration above — must only run after the data command is
-    // confirmed successful.
-    public function up(): void
-    {
-        Schema::dropIfExists('projects_legacy');
-    }
-
-    public function down(): void
-    {
-        // Cannot meaningfully reconstruct the exact original conflated
-        // schema + data here; this down() is a structural placeholder only.
-        // Restore from a database backup instead if this needs reverting.
-    }
-};
-```
+- [ ] **Step 6: Commit**
 
 ```bash
-php artisan migrate --path=database/migrations/2026_08_24_161000_drop_project_students_legacy_table.php
-php artisan migrate --path=database/migrations/2026_08_24_161100_drop_projects_legacy_table.php
-```
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add app/Console/Commands/MigrateProposalProjectData.php database/migrations/2026_08_24_1610*.php database/migrations/2026_08_24_1611*.php tests/Feature/Console/MigrateProposalProjectDataTest.php
+git add app/Console/Commands/MigrateProposalProjectData.php tests/Feature/Console/MigrateProposalProjectDataTest.php
 git commit -m "feat: add proposal/project data migration command, run it against dev DB, drop legacy tables"
 ```
 
@@ -2483,7 +2425,12 @@ class ProjectController extends Controller
 {
     public function index(Request $request): Response
     {
-        $projects = Project::with(['proposal.department', 'proposal.specialization', 'proposal.supervisor', 'status'])
+        // proposal.supervisor and proposal.students must both be eager-loaded
+        // here even though this view doesn't render students — Project's
+        // $appends = ['supervisor', 'students'] (Task 2) fires both accessors
+        // during JSON serialization for every row, and either one un-loaded
+        // means an N+1 across the whole paginated page.
+        $projects = Project::with(['proposal.department', 'proposal.specialization', 'proposal.supervisor', 'proposal.students', 'status'])
             ->where('is_deleted', false)
             ->latest()
             ->paginate(15)

@@ -18,8 +18,11 @@ class ProjectStatus extends Model
         ];
     }
 
-    public function projects(): HasMany
+    // ProjectStatus now backs proposals.status_id, not Project — Project's
+    // own status lives on ProjectLifecycleStatus. There is no "projects with
+    // this proposal-status" relationship to expose any more; see Proposal::status().
+    public function proposals(): HasMany
     {
-        return $this->hasMany(Project::class, 'current_status_id');
+        return $this->hasMany(Proposal::class, 'status_id');
     }
 }

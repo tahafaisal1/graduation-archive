@@ -32,6 +32,14 @@ class Project extends Model
     // project.students), unchanged from before the split.
     protected $appends = ['supervisor', 'students'];
 
+    // Structural guarantee, not a per-call-site convention: every query that
+    // retrieves a Project serializes it (Inertia props, JSON), which fires
+    // both $appends accessors above. Without this default, every new call
+    // site has to remember to eager-load these two exact relations or pay a
+    // silent N+1 per row. Callers still eager-load department/specialization
+    // explicitly where the view actually needs them.
+    protected $with = ['proposal.supervisor', 'proposal.students'];
+
     protected function casts(): array
     {
         return [

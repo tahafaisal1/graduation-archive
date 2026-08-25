@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import ConfirmDelete from '@/components/ConfirmDelete.vue';
+import SimilarityWarning from '@/components/SimilarityWarning.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { isProposalStatus, statusColor, statusLabel } from '@/composables/useProposalStatus';
-import { type BreadcrumbItem, type SharedData } from '@/types';
+import { type BreadcrumbItem, type SharedData, type SimilarProject } from '@/types';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -72,12 +73,31 @@ function deleteProject() {
 }
 
 const showConfirmInstantiate = ref(false);
+const isInstantiating       = ref(false);
 
 function instantiateProject() {
+    // Guards against a double-click firing two POSTs before the first
+    // completes — the dialog stays open (mounted) while the request is
+    // in flight, so nothing else prevents a second click from reaching the
+    // server, which would otherwise throw an uncaught unique-constraint
+    // error since `projects.proposal_id` is unique.
+    if (isInstantiating.value) return;
+    isInstantiating.value = true;
+
     router.post(route('proposals.instantiate', [props.proposal.id]), {}, {
-        onFinish: () => (showConfirmInstantiate.value = false),
+        onFinish: () => {
+            showConfirmInstantiate.value = false;
+            isInstantiating.value = false;
+        },
     });
 }
+
+// ── Similarity warning (flash from store/update, lands here since both
+// redirect to proposals.show) ──────────────────────────────────────────
+const dismissedWarning = ref(false);
+const similarProjects  = computed<SimilarProject[]>(() =>
+    dismissedWarning.value ? [] : (flash.value.similarity_warning ?? []),
+);
 
 // ── Status helpers now come from @/composables/useProposalStatus ──────
 
@@ -114,6 +134,13 @@ const studentStatusLabel: Record<string, string> = {
             >
                 {{ flash.error }}
             </div>
+
+            <SimilarityWarning
+                :show="similarProjects.length > 0"
+                :similar-projects="similarProjects"
+                @continue="dismissedWarning = true"
+                @change-title="dismissedWarning = true"
+            />
 
             <!-- Header row -->
             <div class="flex flex-wrap items-start justify-between gap-4">

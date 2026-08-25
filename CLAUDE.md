@@ -167,6 +167,47 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - Max upload: 15MB PDF only
 
 ## Current Status
+- ✅ **Proposal/Project Split — Task 8 final review complete** — 232/232 total suite (0 failures),
+  frontend build clean. Docs (PROGRESS.md Sections 3-11) brought up to date with the split. Full
+  branch diff (`main...feature/proposal-project-split`) reviewed via `/code-review`; real findings
+  fixed:
+  - `ProposalController::destroy()` now cascades `is_deleted` to the linked instantiated `Project`
+    (in one transaction) — previously, deleting an already-instantiated proposal left its `Project`
+    fully visible everywhere (public browse, `/projects`, report stats), silently defeating the
+    delete.
+  - `ImportController::uploadPdfs()` — was matching/updating against `project_title`/
+    `draft_file_path`/`documents()`, none of which exist on the post-split `Project` model (an
+    untested, guaranteed-to-crash latent bug); now matches `Proposal::title` and sets
+    `draft_file_path` on the proposal directly.
+  - `ProjectsImport.php` — bulk-imported rows with no `final_score` were silently left at
+    قيد التنفيذ (in progress, invisible on the public site) instead of مؤرشف; now always archives,
+    matching the old importer's unconditional behavior for historical work.
+  - `ReportController::dashboard()`'s non-super_admin branch counted raw `Project` rows for
+    `total_projects` while `ReportService` (super_admin path) counts `Proposal` rows — same stat
+    label, two different meanings by role; unified on `Proposal`.
+  - `SimilarityWarning.vue` linked to `route('projects.show', p.id)` with a *proposal* id (404 or
+    wrong-project risk); fixed to `proposals.show`. The warning itself was also never actually
+    reaching the user — `ProposalController::store()`/`update()` both redirect to `proposals.show`,
+    but only `Proposals/Index.vue` rendered `<SimilarityWarning>`; added it to `Proposals/Show.vue`
+    too.
+  - `Proposals/Show.vue`'s instantiate confirm button had no in-flight guard — a double-click could
+    fire two `POST .../instantiate` requests, the second throwing an uncaught unique-constraint
+    `QueryException` (`projects.proposal_id` is unique); added a client-side submitting-lock.
+  - Structural cleanup: `Project::$with` now eager-loads `proposal.supervisor`/`proposal.students`
+    by default (the two relations backing its `$appends` accessors) instead of relying on 5 separate
+    call sites each remembering the exact literal; dead files `ProjectStudent.php`/
+    `ProjectDocument.php` deleted; `ProjectStatus`'s stale `projects()` relation (pointed at a
+    dropped column) replaced with a working `proposals()`; duplicate similarity-warning-building
+    code in `ProposalController` and duplicate avg-score-by-column query in `ReportService` each
+    extracted to a private helper.
+  - Deliberately **not** changed, with reasoning: the 3 legacy rows that migrated to قيد التنفيذ
+    despite having been مؤرشف pre-split (ids 3, 11, 17 — zero examiners at migration time) — this
+    was flagged as a disagreement with one review finding, since it's the plan's own documented,
+    deliberate judgment call (see the "Global Constraints" note in
+    `docs/superpowers/plans/2026-08-24-proposal-project-split.md`), not an oversight; and batching
+    `ProjectsImport`'s per-row `instantiateProject()` transactions into one outer transaction was
+    rejected — it would change bulk import from partial-success-per-row to all-or-nothing on any
+    single row's failure, a real behavior regression, not a pure efficiency win.
 - ✅ **Proposal/Project Split** — 232/232 total suite (0 failures)
   - The previously-conflated `Project` entity is now two entities: **`Proposal`** (the
     paper-approved form — title/description/dept/spec/supervisor/students/PDF, 2-state lifecycle

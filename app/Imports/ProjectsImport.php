@@ -118,10 +118,12 @@ class ProjectsImport implements ToCollection, WithHeadingRow
         // authenticated request (e.g. via Excel::import() in tests), fall
         // back to the row's own supervisor as the instantiating actor —
         // always a real, validated User at this point.
+        // Always archive, regardless of whether a score was provided — bulk
+        // import represents already-finished historical work (see comment
+        // above), so an ungraded row must still be publicly visible, matching
+        // the old importer's unconditional STATUS_ARCHIVED behavior.
         $project = $proposal->instantiateProject(Auth::user() ?? $supervisor);
-        if ($finalScore !== null) {
-            $project->update(['final_score' => $finalScore, 'status_id' => Project::STATUS_ARCHIVED]);
-        }
+        $project->update(['final_score' => $finalScore, 'status_id' => Project::STATUS_ARCHIVED]);
 
         $this->successCount++;
     }

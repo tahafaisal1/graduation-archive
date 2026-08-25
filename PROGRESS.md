@@ -456,14 +456,10 @@ The actual in-progress/graded work. See Section 2's `projects` table.
 - **Fillable:** status_name, sort_order, is_active
 - **Casts:** is_active (boolean)
 - **Relationships:**
-  - `projects()` — HasMany(Project), FK: current_status_id
-- **Accuracy note (found during this doc pass, not fixed — out of Task 8's docs-only scope):** this
-  relationship is now stale. `ProjectStatus` backs `proposals.status_id` post-split (see
-  `Proposal::status()` above and Section 2), but `projects()` still points at `Project` via
-  `current_status_id` — a column that no longer exists on `projects` (renamed/replaced by
-  `status_id` backed by `ProjectLifecycleStatus` instead). Calling `ProjectStatus::projects()`
-  would throw an "unknown column" query error. Nothing in the current codebase calls it (confirmed
-  by search), so it's dead code today, not a live bug — flagged here for a future cleanup task.
+  - `proposals()` — HasMany(Proposal), FK: status_id (fixed during the Task 8 code review — was
+    still `projects()` → HasMany(Project) via `current_status_id`, a column that no longer exists
+    on `projects`; `ProjectStatus` backs `proposals.status_id` post-split, so it needed a
+    `proposals()` relation, not a dead `projects()` one)
 
 ### app/Models/ProjectLifecycleStatus.php (added 2026-08-24, split)
 
@@ -484,14 +480,13 @@ Reference table model for `projects.status_id` (the Project lifecycle) — indep
 - **Relationships:**
   - `proposal()` — BelongsTo(Proposal)
 
-### Removed models (2026-08-24, split)
+### Removed models (2026-08-24, split; files deleted during the Task 8 code review)
 
 - **`app/Models/ProjectStudent.php`** and **`app/Models/ProjectDocument.php`** — their backing
   tables (`project_students`, `project_documents`) were both dropped by the split (see Section 2).
-  Both `.php` files are still physically present on disk but are dead code: a codebase-wide search
-  confirms neither class is referenced anywhere in `app/`, `resources/js/`, `routes/`, `database/`,
-  or `tests/` any more. Not documented as active models here; flagged as a candidate for a future
-  cleanup/deletion pass.
+  Left on disk as dead code after the split (confirmed unreferenced anywhere in `app/`,
+  `resources/js/`, `routes/`, `database/`, or `tests/`); both `.php` files were deleted as part of
+  the Task 8 code review.
 
 ### app/Models/ProjectExaminer.php
 
@@ -672,26 +667,27 @@ rows, not `Project`.
 | downloadTemplate() | GET /import/template | — | Returns ProjectImportTemplate as XLSX | XLSX download | super_admin |
 | preview() | POST /import/preview | file (xlsx, max 5120KB) | ProjectsImport(dryRun:true); flashes preview summary | Redirect back | super_admin |
 | import() | POST /import/run | file (xlsx, max 5120KB) | ProjectsImport(dryRun:false); flashes import_summary | Redirect back | super_admin |
-| uploadPdfs() | POST /import/pdfs | zip_file (zip, max 51200KB) | Extracts ZIP; matches PDF filenames to `project_title`; saves to public storage; flashes pdf_summary | Redirect back | super_admin |
+| uploadPdfs() | POST /import/pdfs | zip_file (zip, max 51200KB) | Extracts ZIP; matches PDF filenames to `Proposal::title`; saves to public storage; sets `draft_file_path` on the matched proposal; flashes pdf_summary | Redirect back | super_admin |
 
 The controller itself (index/downloadTemplate/preview/import) is unchanged and still accurate.
 `app/Imports/ProjectsImport.php` (invoked by preview()/import()) **was** rewritten for the split:
-each valid row now creates a `Proposal` (status_id=STATUS_ARCHIVED, matching the old importer's
-"create it pre-archived" behavior for bulk-imported historical work) and immediately calls
-`$proposal->instantiateProject($actor)`; a `final_score` column, if present, is applied to the
-resulting `Project` afterward. See Section 6 (ProjectsImport isn't itself a Service class, but this
-is where its logic is documented since Section 4 covers the controller that drives it).
+each valid row now creates a `Proposal` and immediately calls `$proposal->instantiateProject($actor)`,
+then unconditionally sets the resulting `Project` to `STATUS_ARCHIVED` (with `final_score` applied
+if present, null otherwise) — matching the old importer's "create it pre-archived" behavior for
+*all* bulk-imported historical work, not just rows that happen to carry a score (fixed during the
+Task 8 code review — the row previously only archived when `final_score` was present, silently
+leaving ungraded imported rows invisible on the public site). See Section 6 (ProjectsImport isn't
+itself a Service class, but this is where its logic is documented since Section 4 covers the
+controller that drives it).
 
-**Accuracy flag (found during this doc pass, not fixed — Task 8 is docs-only):**
-`uploadPdfs()` still calls `Project::where('project_title', $baseName)` and, on a match,
-`$project->update(['draft_file_path' => ...])` and `$project->documents()->create(...)`. None of
-`project_title`, `draft_file_path`, or the `documents()` relationship exist on the post-split
-`Project` model any more (`project_title`/`draft_file_path` moved to `Proposal`; `documents()` and
-the `project_documents` table were dropped entirely — see Section 2/3). No test exercises
-`uploadPdfs()` (confirmed — absent from `tests/Feature/Import/ImportTest.php`), so this is an
-untested, latent bug introduced by the split: the first real ZIP upload that reaches the matching
-query would throw an "unknown column" error. Left as-is per Task 8's PROGRESS.md-only scope;
-flagged here and in the task report for follow-up.
+`uploadPdfs()` was also fixed during the Task 8 code review: it previously called
+`Project::where('project_title', $baseName)` and, on a match, `$project->update(['draft_file_path'
+=> ...])` and `$project->documents()->create(...)` — none of `project_title`, `draft_file_path`, or
+the `documents()` relationship exist on the post-split `Project` model (`project_title`/
+`draft_file_path` moved to `Proposal`; `documents()` and the `project_documents` table were dropped
+entirely), so the first real ZIP upload would have thrown an "unknown column" error. Now matches
+against `Proposal::title` and sets `draft_file_path` directly on the proposal, with no document
+record created (there is nothing to create — the table is gone).
 
 ### app/Http/Controllers/PublicController.php
 
@@ -2020,10 +2016,11 @@ graduation-archive/
 |   |   |-- Evaluation.php
 |   |   |-- Examiner.php
 |   |   |-- Project.php
-|   |   |-- ProjectDocument.php
 |   |   |-- ProjectExaminer.php
+|   |   |-- ProjectLifecycleStatus.php
 |   |   |-- ProjectStatus.php
-|   |   |-- ProjectStudent.php
+|   |   |-- Proposal.php
+|   |   |-- ProposalStudent.php
 |   |   |-- Specialization.php
 |   |   |-- User.php
 |   |-- Services/

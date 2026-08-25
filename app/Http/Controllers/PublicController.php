@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Department;
 use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -27,7 +28,7 @@ class PublicController extends Controller
         $query = Project::query()
             ->where('status_id', Project::STATUS_ARCHIVED)
             ->where('is_deleted', false)
-            ->with(['proposal.department', 'proposal.specialization', 'proposal.supervisor', 'proposal.students']);
+            ->with(['proposal.department', 'proposal.specialization']);
 
         if ($search = $request->input('search')) {
             $query->whereHas('proposal', function ($q) use ($search) {
@@ -52,7 +53,7 @@ class PublicController extends Controller
 
         $departments = Department::orderBy('name')->get(['id', 'name']);
         $specializations = Specialization::orderBy('name')->get(['id', 'name', 'department_id']);
-        $years = \App\Models\Proposal::whereHas('instantiatedProject', fn ($q) => $q->where('status_id', Project::STATUS_ARCHIVED))
+        $years = Proposal::whereHas('instantiatedProject', fn ($q) => $q->where('status_id', Project::STATUS_ARCHIVED))
             ->where('is_deleted', false)
             ->distinct()
             ->orderByDesc('academic_year')
@@ -72,10 +73,7 @@ class PublicController extends Controller
         $project = Project::where('id', $id)
             ->where('status_id', Project::STATUS_ARCHIVED)
             ->where('is_deleted', false)
-            ->with([
-                'proposal.department', 'proposal.specialization', 'proposal.supervisor', 'proposal.students',
-                'examiners', 'evaluations',
-            ])
+            ->with(['proposal.department', 'proposal.specialization', 'examiners', 'evaluations'])
             ->firstOrFail();
 
         Project::where('id', $id)->increment('visit_count');
@@ -85,7 +83,7 @@ class PublicController extends Controller
             ->where('is_deleted', false)
             ->where('id', '!=', $id)
             ->whereHas('proposal', fn ($q) => $q->where('specialization_id', $project->proposal->specialization_id))
-            ->with(['proposal.department', 'proposal.specialization', 'proposal.supervisor', 'proposal.students'])
+            ->with(['proposal.department', 'proposal.specialization'])
             ->limit(3)
             ->get();
 

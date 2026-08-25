@@ -12,12 +12,13 @@ class ProjectController extends Controller
 {
     public function index(Request $request): Response
     {
-        // proposal.supervisor and proposal.students must both be eager-loaded
-        // here even though this view doesn't render students — Project's
-        // $appends = ['supervisor', 'students'] (Task 2) fires both accessors
-        // during JSON serialization for every row, and either one un-loaded
-        // means an N+1 across the whole paginated page.
-        $projects = Project::with(['proposal.department', 'proposal.specialization', 'proposal.supervisor', 'proposal.students', 'status'])
+        // proposal.supervisor/proposal.students come from Project's own
+        // $with default (see Project model) — every retrieval gets them
+        // structurally, since Project's $appends accessors fire on every row
+        // during JSON serialization. Only what this specific view renders
+        // (department, not specialization — Projects/Index.vue's table never
+        // shows it) is loaded explicitly here.
+        $projects = Project::with(['proposal.department', 'status'])
             ->where('is_deleted', false)
             ->latest()
             ->paginate(15)
@@ -29,7 +30,7 @@ class ProjectController extends Controller
     public function show(int $id): Response
     {
         $project = Project::with([
-            'proposal.department', 'proposal.specialization', 'proposal.supervisor', 'proposal.students',
+            'proposal.department', 'proposal.specialization',
             'status', 'examiners.department:id,name', 'evaluations',
         ])->where('is_deleted', false)->findOrFail($id);
 

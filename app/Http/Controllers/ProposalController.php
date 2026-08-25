@@ -11,9 +11,12 @@ use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
 use App\Services\SearchService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -84,10 +87,7 @@ class ProposalController extends Controller
         $redirect = redirect()->route('proposals.show', $proposal)->with('success', 'تم إنشاء المقترح بنجاح');
 
         if ($similar->isNotEmpty()) {
-            $redirect->with('similarity_warning', $similar->map(fn ($p) => [
-                'id' => $p->id, 'project_title' => $p->title, 'academic_year' => $p->academic_year,
-                'department' => $p->department?->name,
-            ])->all());
+            $redirect->with('similarity_warning', $this->formatSimilarityWarning($similar));
         }
 
         return $redirect;
@@ -130,7 +130,7 @@ class ProposalController extends Controller
 
         if ($request->hasFile('pdf_file')) {
             if ($pdfPath) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($pdfPath);
+                Storage::disk('public')->delete($pdfPath);
             }
             $pdfPath = $request->file('pdf_file')->store('projects', 'public');
         }
@@ -157,10 +157,7 @@ class ProposalController extends Controller
         $redirect = redirect()->route('proposals.show', $proposal)->with('success', 'تم تحديث المقترح بنجاح');
 
         if ($similar->isNotEmpty()) {
-            $redirect->with('similarity_warning', $similar->map(fn ($p) => [
-                'id' => $p->id, 'project_title' => $p->title, 'academic_year' => $p->academic_year,
-                'department' => $p->department?->name,
-            ])->all());
+            $redirect->with('similarity_warning', $this->formatSimilarityWarning($similar));
         }
 
         return $redirect;
@@ -169,7 +166,15 @@ class ProposalController extends Controller
     public function destroy(DeleteProposalRequest $request, int $id): RedirectResponse
     {
         $proposal = Proposal::where('is_deleted', false)->findOrFail($id);
-        $proposal->update(['is_deleted' => true]);
+
+        // A proposal that was already instantiated carries a linked Project —
+        // deleting only the proposal would leave that Project fully visible
+        // everywhere (public browse, /projects, report stats), silently
+        // defeating the delete. Both flags must flip together.
+        DB::transaction(function () use ($proposal) {
+            $proposal->update(['is_deleted' => true]);
+            $proposal->instantiatedProject()->update(['is_deleted' => true]);
+        });
 
         return redirect()->route('proposals.index')->with('success', 'تم حذف المقترح بنجاح');
     }
@@ -183,5 +188,19 @@ class ProposalController extends Controller
         $project = $proposal->instantiateProject($user);
 
         return redirect()->route('projects.show', $project)->with('success', 'تم أرشفة المقترح وإنشاء المشروع بنجاح');
+    }
+
+    /**
+     * @param  Collection<int, Proposal>  $similar
+     * @return array<int, array{id: int, project_title: string, academic_year: string, department: ?string}>
+     */
+    private function formatSimilarityWarning(Collection $similar): array
+    {
+        return $similar->map(fn (Proposal $p) => [
+            'id'             => $p->id,
+            'project_title'  => $p->title,
+            'academic_year'  => $p->academic_year,
+            'department'     => $p->department?->name,
+        ])->all();
     }
 }

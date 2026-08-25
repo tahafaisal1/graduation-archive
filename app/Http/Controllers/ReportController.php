@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\ReportExport;
 use App\Models\Department;
-use App\Models\Project;
+use App\Models\Proposal;
 use App\Services\ReportService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -25,7 +25,11 @@ class ReportController extends Controller
         $stats = match (true) {
             $user->hasRole('super_admin')  => $this->reportService->getDashboardStats(),
             $user->hasRole('dept_manager') => $this->deptManagerDashboard($user),
-            default                        => ['total_projects' => Project::where('is_deleted', false)->count()],
+            // total_projects here must count the same entity ReportService's
+            // super_admin path counts (proposals — see getDashboardStats()),
+            // not the narrower instantiated-only `projects` table, or the
+            // same stat label means two different things depending on role.
+            default => ['total_projects' => Proposal::where('is_deleted', false)->count()],
         };
 
         return Inertia::render('Dashboard', ['stats' => $stats]);

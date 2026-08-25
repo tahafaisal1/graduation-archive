@@ -53,15 +53,7 @@ class ReportService
             ->when($departmentId, fn ($q) => $q->where('id', $departmentId))
             ->get(['id', 'name', 'code']);
 
-        $avgScores = Project::query()
-            ->join('proposals', 'projects.proposal_id', '=', 'proposals.id')
-            ->where('projects.is_deleted', false)
-            ->whereNotNull('projects.final_score')
-            ->when($departmentId, fn ($q) => $q->where('proposals.department_id', $departmentId))
-            ->groupBy('proposals.department_id')
-            ->selectRaw('proposals.department_id, ROUND(AVG(projects.final_score), 2) as avg_score, COUNT(*) as scored_count')
-            ->get()
-            ->keyBy('department_id');
+        $avgScores = $this->avgScoresGroupedBy('department_id', $departmentId);
 
         $supervisors = User::role('supervisor')
             ->withCount([
@@ -141,14 +133,7 @@ class ReportService
             ->orderByDesc('project_count')
             ->get(['id', 'name', 'department_id']);
 
-        $avgScores = Project::query()
-            ->join('proposals', 'projects.proposal_id', '=', 'proposals.id')
-            ->where('projects.is_deleted', false)
-            ->whereNotNull('projects.final_score')
-            ->groupBy('proposals.supervisor_id')
-            ->selectRaw('proposals.supervisor_id, ROUND(AVG(projects.final_score), 2) as avg_score, COUNT(*) as scored_count')
-            ->get()
-            ->keyBy('supervisor_id');
+        $avgScores = $this->avgScoresGroupedBy('supervisor_id');
 
         $byYear = Proposal::where('is_deleted', false)
             ->groupBy('supervisor_id', 'academic_year')
@@ -210,5 +195,23 @@ class ReportService
             'yearly'             => $yearly->values(),
             'department_by_year' => $deptByYear,
         ];
+    }
+
+    /**
+     * Shared by getDepartmentReport()/getSupervisorReport() — both need the
+     * identical projects⋈proposals average-score aggregation, differing only
+     * in which proposals column they group (and optionally filter) by.
+     */
+    private function avgScoresGroupedBy(string $column, mixed $filterValue = null): \Illuminate\Support\Collection
+    {
+        return Project::query()
+            ->join('proposals', 'projects.proposal_id', '=', 'proposals.id')
+            ->where('projects.is_deleted', false)
+            ->whereNotNull('projects.final_score')
+            ->when($filterValue, fn ($q) => $q->where("proposals.{$column}", $filterValue))
+            ->groupBy("proposals.{$column}")
+            ->selectRaw("proposals.{$column}, ROUND(AVG(projects.final_score), 2) as avg_score, COUNT(*) as scored_count")
+            ->get()
+            ->keyBy($column);
     }
 }

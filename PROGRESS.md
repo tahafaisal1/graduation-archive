@@ -57,6 +57,39 @@
 
 ### Bugfixes / Corrections
 
+- **2026-08-26 — Supervisor "مشاريعي" route, proposal/project terminology, instantiate-button
+  wording.** Fixes 3 issues confirmed by a read-only gap analysis
+  (`docs/analysis/current-system-behavior.md` on branch `analysis-current-system-behavior`, issues
+  #2/#3/#4), landed on branch `fix/supervisor-projects-and-terminology` off `main` (deliberately not
+  off the still-unmerged finalize-archive PR #1). Root causes and fixes:
+  - The supervisor sidebar's "مشاريعي" link (`AppSidebar.vue`) pointed at `/projects/my`, a route
+    that never existed — `GET /projects/{id}` (no numeric constraint) would have swallowed it as a
+    literal `$id="my"` string, throwing a `TypeError`, and no supervisor-scoping query existed
+    anywhere in `ProjectController`. Added `GET /projects/my` (name `projects.my`, registered
+    *before* `/projects/{id}` for route-order correctness) with `role:supervisor` middleware (403
+    for every other role), and `ProjectController::myProjects()` scoping to
+    `Project::whereHas('proposal', fn ($q) => $q->where('supervisor_id', $request->user()->id))`.
+    Reused `Projects/Index.vue` via a new optional `heading` prop instead of a new page.
+  - `Dashboard.vue`, `Search/Index.vue`, and all 4 `Reports/*.vue` pages labeled `Proposal`-backed
+    counts as "مشروع/مشاريع" (Project) instead of "مقترح/مقترحات" (Proposal) — confirmed root cause:
+    `ReportService` sources nearly every count field from `Proposal`/`proposals()` relations; only
+    `avg_score`/`scored_count` are genuinely `Project`-backed (via a join on `projects.final_score`)
+    and were deliberately left worded as "مشاريع". ~24 Arabic-copy edits, no route/prop/key renamed.
+    Also renamed `Search/Index.vue`'s `project` loop variable (iterating Proposal rows) to
+    `proposal` for clarity — the id it passed to `proposals.show` was already correct.
+  - `Proposals/Show.vue`'s instantiate-proposal button read "تنزيل المشروع" ("Download the
+    project") for an action that archives the proposal and creates a `Project` row; its own confirm
+    dialog already had a correct `title`/`message` but a `confirm-label` that still said "تنزيل
+    المشروع", disagreeing with the dialog's own title. Both now consistently say "إنشاء المشروع".
+  - `tests/Feature/Project/MyProjectsTest.php` — 3 new tests (6 assertions): supervisor sees only
+    their own projects, all 4 non-supervisor roles (super_admin, dept_manager, dept_staff, viewer)
+    get 403, the route renders `Projects/Index` with the `مشاريعي` heading and correct data. Full
+    suite: 238/238 (0 failures), frontend build clean.
+  - Issue #1 from the analysis (sidebar-mismatch, previously confirmed non-existent via live
+    reproduction): the `/proposals` → Proposal Show → "عرض المشروع" → `/projects/{id}` chain is not
+    touched by any file this branch modifies (confirmed by diff); re-verified live via Playwright
+    as part of this branch's final review, see the branch's PR description for the walkthrough.
+
 - **2026-08-24 — Ghost "في انتظار الموافقة" status badge removed.** Root cause:
   `resources/js/composables/useProjectStatus.ts` still labeled the "مقترح" status as
   "في انتظار الموافقة" (yellow), a leftover from before the system moved to paper-based approval.

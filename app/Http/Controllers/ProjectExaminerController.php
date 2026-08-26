@@ -13,6 +13,10 @@ class ProjectExaminerController extends Controller
     {
         $project = Project::where('is_deleted', false)->findOrFail($projectId);
 
+        if ($project->status_id === Project::STATUS_ARCHIVED) {
+            return back()->with('error', 'لا يمكن التعديل على مشروع مؤرشف نهائيًا');
+        }
+
         if ($project->examiners()->count() >= 2) {
             return back()->with('error', 'لا يمكن إضافة أكثر من ممتحنين لكل مشروع');
         }
@@ -31,6 +35,10 @@ class ProjectExaminerController extends Controller
     public function remove(int $projectId, int $examinerId): RedirectResponse
     {
         $project = Project::where('is_deleted', false)->findOrFail($projectId);
+
+        if ($project->status_id === Project::STATUS_ARCHIVED) {
+            return back()->with('error', 'لا يمكن التعديل على مشروع مؤرشف نهائيًا');
+        }
 
         $project->examiners()->detach($examinerId);
 

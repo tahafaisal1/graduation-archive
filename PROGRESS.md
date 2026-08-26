@@ -81,6 +81,9 @@
     project") for an action that archives the proposal and creates a `Project` row; its own confirm
     dialog already had a correct `title`/`message` but a `confirm-label` that still said "تنزيل
     المشروع", disagreeing with the dialog's own title. Both now consistently say "إنشاء المشروع".
+    `Proposals/Index.vue` had the identical bug on its own row-action button and `ConfirmDelete`
+    instance — missed by the gap analysis (scoped to `Show.vue` only) and by this branch's first
+    pass; caught by `/code-review` on the full branch diff and fixed the same way.
   - `tests/Feature/Project/MyProjectsTest.php` — 3 new tests (6 assertions): supervisor sees only
     their own projects, all 4 non-supervisor roles (super_admin, dept_manager, dept_staff, viewer)
     get 403, the route renders `Projects/Index` with the `مشاريعي` heading and correct data. Full

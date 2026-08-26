@@ -197,7 +197,10 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
     `confirm-label` still said "تنزيل المشروع", disagreeing with its own title. Both the button and
     the `confirm-label` now say "إنشاء المشروع"; the dialog's `title`/`message` were already correct
     and untouched. The real PDF-download link ("↓ تنزيل الملف") on the same page is unrelated and
-    unchanged.
+    unchanged. **`Proposals/Index.vue` had the identical bug** (row-action button + its own
+    `ConfirmDelete` instance, lines ~405/468) — missed by the original gap analysis (which only
+    inspected `Show.vue`) and by this branch's first pass; caught by `/code-review` on the full
+    branch diff and fixed in the same pass.
   - Base branch: `main` (`28e252b`) — deliberately not `worktree-project-finalize-archive` (PR #1),
     which remains unmerged; confirmed with the user before starting.
 - ✅ **Proposal/Project Split — Task 8 final review complete** — 232/232 total suite (0 failures),

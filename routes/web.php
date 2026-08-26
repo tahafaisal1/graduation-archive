@@ -85,6 +85,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
     Route::get('projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
 
+    Route::post('projects/{id}/finalize', [ProjectController::class, 'finalize'])
+        ->name('projects.finalize');
+
     Route::get('search', [SearchController::class, 'index'])->name('search.index');
     Route::get('search/suggestions', [SearchController::class, 'suggestions'])->name('search.suggestions');
 });

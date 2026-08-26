@@ -26,7 +26,7 @@ class SpecializationController extends Controller
 
     public function destroy(Specialization $specialization)
     {
-        if ($specialization->projects()->exists()) {
+        if ($specialization->proposals()->exists()) {
             return back()->with('error', 'لا يمكن حذف التخصص لوجود مشاريع مرتبطة به');
         }
 

@@ -2,26 +2,21 @@
 
 namespace Database\Factories;
 
-use App\Models\Department;
-use App\Models\Specialization;
-use App\Models\User;
+use App\Models\Project;
+use App\Models\Proposal;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class ProjectFactory extends Factory
 {
+    protected $model = Project::class;
+
     public function definition(): array
     {
-        $year = $this->faker->numberBetween(2020, 2026);
-
         return [
-            'project_title'     => $this->faker->sentence(4),
-            'description'       => $this->faker->paragraph(),
-            'academic_year'     => $year . '/' . ($year + 1),
-            'department_id'     => Department::factory(),
-            'specialization_id' => Specialization::factory(),
-            'supervisor_id'     => User::factory(),
-            'current_status_id' => 1,
-            'is_deleted'        => false,
+            'proposal_id' => Proposal::factory(),
+            'status_id'   => Project::STATUS_IN_PROGRESS,
+            'final_score' => null,
+            'is_deleted'  => false,
         ];
     }
 }

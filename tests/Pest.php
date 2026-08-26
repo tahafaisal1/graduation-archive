@@ -41,9 +41,9 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function userWithRole(string $role): \App\Models\User
+function userWithRole(string $role, array $attributes = []): \App\Models\User
 {
-    $user = \App\Models\User::factory()->create();
+    $user = \App\Models\User::factory()->create($attributes);
     $user->assignRole($role);
 
     return $user;

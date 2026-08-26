@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Project;
+use App\Models\Proposal;
 use App\Services\SearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,9 +20,9 @@ class SearchController extends Controller
             'academic_year', 'supervisor_id', 'status', 'sort',
         ]);
 
-        $projects = $this->search->searchProjects($filters);
+        $projects = $this->search->searchProposals($filters);
         $projects->getCollection()->load([
-            'students' => fn ($q) => $q->select('id', 'full_name', 'project_id'),
+            'students' => fn ($q) => $q->select('id', 'full_name', 'proposal_id'),
         ]);
 
         return Inertia::render('Search/Index', [
@@ -40,11 +40,11 @@ class SearchController extends Controller
             return response()->json([]);
         }
 
-        $suggestions = Project::where('is_deleted', false)
-            ->where('project_title', 'like', "%{$q}%")
-            ->orderByDesc('visit_count')
+        $suggestions = Proposal::where('is_deleted', false)
+            ->where('title', 'like', "%{$q}%")
+            ->latest()
             ->limit(5)
-            ->pluck('project_title');
+            ->pluck('title');
 
         return response()->json($suggestions);
     }

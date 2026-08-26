@@ -2,8 +2,9 @@
 
 use App\Models\Department;
 use App\Models\Examiner;
-use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
+use Database\Seeders\ProjectLifecycleStatusSeeder;
 use Database\Seeders\ProjectStatusSeeder;
 use Database\Seeders\RoleSeeder;
 use Spatie\Permission\PermissionRegistrar;
@@ -12,25 +13,32 @@ beforeEach(function () {
     app()[PermissionRegistrar::class]->forgetCachedPermissions();
     $this->seed(RoleSeeder::class);
     $this->seed(ProjectStatusSeeder::class);
+    $this->seed(ProjectLifecycleStatusSeeder::class);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Creates a dept, spec, supervisor, project, and one examiner in that dept.
+ * Creates a dept, spec, supervisor, an instantiated project, and one examiner
+ * in that dept. Mirrors ReportTest.php::makeReportProject() — builds a
+ * مؤرشف Proposal then instantiates its linked Project, since Project no
+ * longer has its own department_id/specialization_id/supervisor_id fields.
  */
 function makeExaminerProject(): array
 {
     $dept       = Department::factory()->create();
     $spec       = Specialization::factory()->create(['department_id' => $dept->id]);
     $supervisor = userWithRole('supervisor');
-    $project    = Project::factory()->create([
+
+    $proposal = Proposal::factory()->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $supervisor->id,
-        'current_status_id' => 1,
+        'status_id'         => Proposal::STATUS_ARCHIVED,
         'is_deleted'        => false,
     ]);
+
+    $project  = $proposal->instantiateProject($supervisor);
     $examiner = Examiner::factory()->create(['department_id' => $dept->id]);
 
     return compact('dept', 'spec', 'supervisor', 'project', 'examiner');

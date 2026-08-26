@@ -22,9 +22,9 @@ class Department extends Model
         return $this->hasMany(User::class);
     }
 
-    public function projects(): HasMany
+    public function proposals(): HasMany
     {
-        return $this->hasMany(Project::class);
+        return $this->hasMany(Proposal::class);
     }
 
     public function examiners(): HasMany

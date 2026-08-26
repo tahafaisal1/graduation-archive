@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\ProjectImportTemplate;
 use App\Imports\ProjectsImport;
-use App\Models\Project;
+use App\Models\Proposal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -83,11 +83,11 @@ class ImportController extends Controller
             }
 
             $baseName = pathinfo($entry, PATHINFO_FILENAME);
-            $project  = Project::where('project_title', $baseName)
+            $proposal = Proposal::where('title', $baseName)
                 ->where('is_deleted', false)
                 ->first();
 
-            if (! $project) {
+            if (! $proposal) {
                 $unmatched[] = $baseName;
                 continue;
             }
@@ -97,13 +97,10 @@ class ImportController extends Controller
             $storagePath = 'projects/' . uniqid('import_') . '.pdf';
             \Illuminate\Support\Facades\Storage::disk('public')->put($storagePath, $pdfContent);
 
-            $project->update(['draft_file_path' => $storagePath]);
-
-            $project->documents()->create([
-                'document_type' => 'final_report',
-                'file_path'     => $storagePath,
-                'is_final'      => true,
-            ]);
+            // draft_file_path lives on the Proposal (the paper form), not the
+            // instantiated Project — see the 2026-08-24 split. There is no
+            // per-document tracking any more (project_documents was dropped).
+            $proposal->update(['draft_file_path' => $storagePath]);
 
             $matched++;
         }

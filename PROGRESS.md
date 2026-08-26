@@ -29,6 +29,66 @@
 | UI Primitives | radix-vue | ^1.9.11 |
 | Route helpers | ziggy-js | ^2.4.2 |
 
+### Major Changes
+
+- **2026-08-25 — Project Finalize/Archive.** A nullable `final_file_path` string column was added
+  to `projects` (migration `2026_08_25_150000_add_final_file_path_to_projects_table.php`, placed
+  `->after('final_score')`). `Project::canBeFinalizedBy(User $user): bool` (super_admin always;
+  dept_manager/dept_staff of `proposal->department_id`; false once the project is already
+  archived) and `Project::finalizationBlockers(): array` (returns Arabic-language blocker messages
+  unless exactly 2 examiners are assigned and a final score is set) gate the new
+  `POST /projects/{id}/finalize` route (`ProjectController::finalize()`), authorized and validated
+  by `FinalizeProjectRequest` (PDF only, max 15MB, plus the blockers above). On success the
+  uploaded file is stored to `projects/final` on the `public` disk, `final_file_path` is set, and
+  `status_id` moves to `Project::STATUS_ARCHIVED`. Once archived,
+  `ProjectExaminerController::assign()`/`remove()` and `EvaluationController::store()`/
+  `updateScore()` all reject the request with a flash error (guard clause checking
+  `status_id === Project::STATUS_ARCHIVED`) — previously these had no such lock. On the frontend,
+  `Projects/Show.vue` gained a finalize card (an orange `ConfirmDelete` confirm-dialog variant)
+  shown to dept_manager/dept_staff/super_admin while the project isn't archived yet, displaying
+  any outstanding readiness blockers and, once archived, a download link for the final file;
+  `Public/Show.vue`'s download link now points at `project.final_file_path` instead of
+  `project.proposal.draft_file_path`, closing the previously-flagged gap where a freshly
+  instantiated project had no path to becoming visible on the public site. See
+  `.superpowers/sdd/2026-08-25-project-finalize-archive/` for the full per-task history.
+- **2026-08-24 — Proposal/Project Split.** The previously-conflated `Project` entity is now two
+  entities: **`Proposal`** (the paper-approved form — title/description/dept/spec/supervisor/
+  students/PDF; 2-state مقترح↔مؤرشف lifecycle via `project_status`; never graded) and **`Project`**
+  (the actual in-progress/graded work — `belongsTo` a `Proposal` via a unique, `restrictOnDelete`
+  `proposal_id`; reads `supervisor`/`students` by reference through `$project->proposal`, never
+  duplicating them). `Proposal::instantiateProject(User $actor): Project` is the single atomic
+  action (`DB::transaction()`-wrapped) that flips a proposal مقترح→مؤرشف and creates its linked
+  `Project` row in one step; gated by `Proposal::canBeInstantiatedBy()` (ported from the old flat
+  `Project::canBeArchivedBy()`). Data migrated via `php artisan proposals:migrate-legacy-data`
+  (`app/Console/Commands/MigrateProposalProjectData.php`), which first cleans up legacy project
+  id=1 (found مقترح but with examiners/evaluations/a score already attached — now structurally
+  impossible under the split) before copying 25 proposals / 20 projects forward. `visit_count` and
+  `instantiated_by`/`instantiated_at` live on `projects` (view-count and instantiation-actor
+  concepts belong to the instantiated work, not the form). New route names:
+  `proposals.index/create/store/show/edit/update/destroy` + `proposals.instantiate`; `projects.*`
+  is now GET-only (`index`/`show`) — no create/store/edit/update/destroy on `Project` directly.
+  **Flagged limitation (closed 2026-08-25):** at the time of this change, no UI existed to move a
+  project from قيد التنفيذ (in progress, the default `instantiateProject()` lands it at) to مؤرشف
+  (archived) in `project_lifecycle_status` — public browse/show only ever surfaced مؤرشف projects,
+  so a freshly-instantiated project was invisible there until its status was flipped some other
+  way. This gap was closed by the Project Finalize/Archive change above. See Section 2 below for
+  the full updated schema and `.superpowers/sdd/2026-08-24-proposal-project-split/` for the complete
+  per-task history (schema, models, data migration, controllers/routes, frontend, full-suite
+  realignment — 232/232 tests passing, 0 failures).
+
+### Bugfixes / Corrections
+
+- **2026-08-24 — Ghost "في انتظار الموافقة" status badge removed.** Root cause:
+  `resources/js/composables/useProjectStatus.ts` still labeled the "مقترح" status as
+  "في انتظار الموافقة" (yellow), a leftover from before the system moved to paper-based approval.
+  Confirmed via direct DB query that no stale data was involved — `project_status` has exactly 2
+  rows (`مؤرشف`, `مقترح`) and all 25 seeded projects reference one of them. Backend authorization
+  (`Project::canBeModifiedBy()`/`canBeArchivedBy()`, the three project FormRequests,
+  `ProjectController::edit()`) and `Projects/Show.vue` were already fully correct for the 2-status/
+  paper-approval model — only the frontend label/color map and one dashboard stat card title
+  needed fixing. `isPendingApproval()` renamed to `isProposalStatus()` throughout
+  `Projects/Index.vue` and `Projects/Show.vue`.
+
 ### Current Development Phase and Status
 
 **Phase 1 Complete** — All planned Phase 1 features have been implemented and tested. The full test suite passes at 208/218 (10 pre-existing failures due to ext-zip disabled in XAMPP environment).
@@ -126,6 +186,10 @@ Note: `description` column added by migration `2026_06_17_000001_add_description
 
 ### Table: project_status
 
+Backs `proposals.status_id` (the Proposal lifecycle) since the 2026-08-24 split. Do not confuse
+with `project_lifecycle_status` below, which backs `projects.status_id` (the Project lifecycle) —
+these are two independent 2-row reference tables with different meanings at the same ids.
+
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
 | id | tinyint unsigned, PK | No | auto | Primary key (tiny int) |
@@ -135,51 +199,79 @@ Note: `description` column added by migration `2026_06_17_000001_add_description
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Seeded statuses (from ProjectStatusSeeder):**
+**Seeded statuses (from ProjectStatusSeeder, updated 2026-08-17 — lifecycle scoped down to 2 statuses):**
 
 | id | status_name | sort_order | is_active |
 |---|---|---|---|
-| 1 | archived | 8 | true |
-| 2 | proposal_submitted | 1 | false |
-| 3 | supervisor_approved | 2 | false |
-| 4 | hod_approved | 3 | false |
-| 5 | in_progress | 4 | false |
-| 6 | ready_for_defense | 5 | false |
-| 7 | under_defense | 6 | false |
-| 8 | revisions_required | 7 | false |
-| 9 | rejected | 9 | false |
-| 10 | cancelled | 10 | false |
+| 1 | مؤرشف (archived) | 2 | true |
+| 2 | مقترح (proposal) | 1 | true |
 
-Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
+Note: IDs kept as originally seeded (id=1 already meant "archived" everywhere in the codebase),
+only the Arabic text and sort_order changed. The original 8 Phase-2 placeholder statuses
+(supervisor_approved, hod_approved, in_progress, ready_for_defense, under_defense,
+revisions_required, rejected, cancelled) are removed — they were never referenced by any
+controller, service, or Vue component (confirmed by codebase-wide audit), only present in
+seed data. Supervisor and department approval happen on paper, outside the system (updated
+2026-08-23) — there is no digital approval tracking; see the `projects` table note below for
+what replaced the short-lived `supervisor_approved_by/_at`/`department_approved_by/_at` fields.
 
-### Table: projects
+### Table: proposals (added 2026-08-24, split)
+
+The paper-approved form. One row per submitted proposal; never carries grading data.
 
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
 | id | bigint unsigned, PK | No | auto | Primary key |
-| project_title | varchar(255) | No | — | Project title (Arabic) |
+| title | varchar(255) | No | — | Proposal title (Arabic) |
 | description | text | Yes | null | Long description |
 | academic_year | varchar(9) | No | — | e.g., "2024/2025" |
 | department_id | bigint unsigned, FK | No | — | FK to departments.id |
 | specialization_id | bigint unsigned, FK | No | — | FK to specializations.id |
 | supervisor_id | bigint unsigned, FK | No | — | FK to users.id |
-| current_status_id | tinyint unsigned, FK | No | — | FK to project_status.id |
-| based_on_project_id | bigint unsigned, FK | Yes | null | FK to projects.id (nullOnDelete) — evolution link |
+| created_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) |
 | draft_file_path | varchar(255) | Yes | null | Path to uploaded PDF in public storage |
+| status_id | tinyint unsigned, FK | No | — | FK to project_status.id (2-state مقترح/مؤرشف lifecycle) |
+| based_on_project_id | bigint unsigned | Yes | null | Points at projects.id (no DB-level FK constraint) — "a proposal building on a previously finished project" |
+| is_deleted | boolean | No | false | Soft delete flag |
+| created_at | timestamp | Yes | null | — |
+| updated_at | timestamp | Yes | null | — |
+
+**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `created_by` to users.id (nullOnDelete), `status_id` to project_status.id. `based_on_project_id` has no DB constraint (points at the new `projects` table created by a later migration in the same batch).
+
+### Table: projects (rebuilt 2026-08-24, split)
+
+The actual in-progress/graded work. `belongsTo` a proposal; reads supervisor/students by reference
+through `$project->proposal`, never duplicates them onto this table.
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| id | bigint unsigned, PK | No | auto | Primary key |
+| proposal_id | bigint unsigned, FK, unique | No | — | FK to proposals.id (restrictOnDelete) — one project per proposal |
+| status_id | tinyint unsigned, FK | No | — | FK to project_lifecycle_status.id (2-state قيد التنفيذ/مؤرشف lifecycle — NOT the same table as proposals.status_id) |
 | final_score | decimal(5,2) | Yes | null | Final score out of 100 |
+| final_file_path | varchar(255) | Yes | null | Path to the uploaded final project PDF, set by ProjectController::finalize() |
+| instantiated_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — who ran instantiateProject(); null for legacy-migrated rows |
+| instantiated_at | timestamp | Yes | null | When instantiateProject() ran |
 | visit_count | int unsigned | No | 0 | Page view counter |
 | is_deleted | boolean | No | false | Soft delete flag |
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `department_id` to departments, `specialization_id` to specializations, `supervisor_id` to users, `current_status_id` to project_status.id, `based_on_project_id` to projects.id (self-referential, nullOnDelete).
+**Foreign keys:** `proposal_id` to proposals.id (unique, restrictOnDelete — a hard-deleted proposal must not silently cascade-destroy a graded project and its examiners/evaluations), `status_id` to project_lifecycle_status.id, `instantiated_by` to users.id (nullOnDelete).
 
-### Table: project_students
+Note (2026-08-23, pre-split): `supervisor_approved_by/_at` and `department_approved_by/_at` (added
+2026-08-17) were dropped by migration `2026_08_23_120000_drop_approval_gate_columns_from_projects_table.php`
+— approval turned out to happen on paper, outside the system. `created_by` was added in their
+place on the old flat `projects` table; it now lives on `proposals` instead (see table above),
+carrying forward the same creator-or-department-manager permission check described in CLAUDE.md's
+"Key Business Rules", now enforced by `Proposal::canBeModifiedBy()`/`canBeInstantiatedBy()`.
+
+### Table: proposal_students (added 2026-08-24, split — replaces project_students)
 
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
 | id | bigint unsigned, PK | No | auto | Primary key |
-| project_id | bigint unsigned, FK | No | — | FK to projects.id (cascadeOnDelete) |
+| proposal_id | bigint unsigned, FK | No | — | FK to proposals.id (cascadeOnDelete) |
 | full_name | varchar(255) | No | — | Student full name |
 | registration_number | varchar(255) | No | — | Student registration number |
 | status | varchar(255) | No | active | Student status: active, withdrawn, completed |
@@ -187,23 +279,49 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `project_id` references projects.id, cascadeOnDelete.
+**Foreign keys:** `proposal_id` references proposals.id, cascadeOnDelete.
 
-### Table: project_documents
+Note: the old `project_students` table (and the old flat `projects` table, renamed to
+`projects_legacy` mid-migration) were dropped by `proposals:migrate-legacy-data`'s
+`dropLegacyTables()` step once it verified every row copied forward correctly — they no longer
+exist in the schema.
+
+### Table: project_lifecycle_status (added 2026-08-24, split)
+
+Backs `projects.status_id` (the Project lifecycle) — independent from `project_status` above
+(which backs `proposals.status_id`, the Proposal lifecycle). Same shape, different table, different
+meaning at the same ids.
 
 | Column | Type | Nullable | Default | Description |
 |---|---|---|---|---|
-| id | bigint unsigned, PK | No | auto | Primary key |
-| project_id | bigint unsigned, FK | No | — | FK to projects.id (cascadeOnDelete) |
-| document_type | varchar(255) | No | — | e.g., "final_report" |
-| file_path | varchar(255) | No | — | Storage path |
-| approved_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) |
-| is_final | boolean | No | false | Whether this is the final version |
-| approved_at | timestamp | Yes | null | When it was approved |
+| id | tinyint unsigned, PK | No | auto | Primary key |
+| status_name | varchar(255), unique | No | — | Status identifier string |
+| sort_order | tinyint unsigned | No | 0 | Display order |
+| is_active | boolean | No | true | Active flag |
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
-**Foreign keys:** `project_id` references projects.id (cascadeOnDelete), `approved_by` references users.id (nullOnDelete).
+**Seeded statuses (from ProjectLifecycleStatusSeeder):**
+
+| id | status_name | sort_order | is_active |
+|---|---|---|---|
+| 1 | قيد التنفيذ (in progress) | 1 | true |
+| 2 | مؤرشف (archived) | 2 | true |
+
+Note: `instantiateProject()` always creates a new project at id=1 (قيد التنفيذ). Moving it to id=2
+(مؤرشف) previously required manual intervention — see the "Flagged limitation (closed
+2026-08-25)" note under Major Changes above — but this gap is now closed by the Project
+Finalize/Archive change: `POST /projects/{id}/finalize` flips the status, driven from the
+finalize card in `Projects/Show.vue`.
+
+### Table: project_documents — DROPPED 2026-08-24 (split)
+
+Existed prior to the split (milestone document tracking). Dropped by migration
+`2026_08_24_160600_drop_project_documents_table.php` — the table was empty (0 rows) at the time of
+the split, confirmed via audit, so no data was lost. Milestone document tracking is not currently
+implemented anywhere in the split schema; STATUS_HISTORY and DEFENSE were audited codebase-wide
+prior to the 2026-08-17 lifecycle scope-down and confirmed to have never been implemented
+(planning docs only, no migration/model/controller) — nothing further to remove.
 
 ### Table: examiners
 
@@ -266,7 +384,9 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 - **Casts:** email_verified_at (datetime), password (hashed), is_active (boolean)
 - **Relationships:**
   - `department()` — BelongsTo(Department), FK: department_id
-  - `supervisedProjects()` — HasMany(Project), FK: supervisor_id
+  - `supervisedProposals()` — HasMany(Proposal), FK: supervisor_id (renamed 2026-08-24 from
+    `supervisedProjects()`/`HasMany(Project)` — now returns `Proposal` rows, since supervisor is a
+    proposal-level attribute read by reference from `Project`, not stored on `projects`)
 
 ### app/Models/Department.php
 
@@ -276,7 +396,7 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 - **Relationships:**
   - `specializations()` — HasMany(Specialization)
   - `users()` — HasMany(User)
-  - `projects()` — HasMany(Project)
+  - `proposals()` — HasMany(Proposal) (renamed 2026-08-24 from `projects()`/`HasMany(Project)`)
   - `examiners()` — HasMany(Examiner)
 
 ### app/Models/Specialization.php
@@ -286,24 +406,74 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 - **Fillable:** name, department_id
 - **Relationships:**
   - `department()` — BelongsTo(Department)
-  - `projects()` — HasMany(Project)
+  - `proposals()` — HasMany(Proposal) (renamed 2026-08-24 from `projects()`/`HasMany(Project)`)
 
-### app/Models/Project.php
+### app/Models/Proposal.php (added 2026-08-24, split)
 
-- **Table:** projects
+The paper-approved form. See Section 2's `proposals` table and CLAUDE.md's "Key Business Rules"
+for the full lifecycle/permission narrative.
+
+- **Table:** proposals
 - **Traits:** HasFactory
-- **Fillable:** project_title, description, academic_year, department_id, specialization_id, supervisor_id, current_status_id, based_on_project_id, draft_file_path, final_score, visit_count, is_deleted
-- **Casts:** is_deleted (boolean), final_score (decimal:2)
+- **Constants:** `STATUS_ARCHIVED = 1`, `STATUS_PENDING = 2` (backs `project_status.id` — same IDs
+  the old flat `Project` model used pre-split, now living here instead)
+- **Fillable:** title, description, academic_year, department_id, specialization_id, supervisor_id, created_by, draft_file_path, status_id, based_on_project_id, is_deleted
+- **Casts:** is_deleted (boolean)
 - **Relationships:**
   - `department()` — BelongsTo(Department)
   - `specialization()` — BelongsTo(Specialization)
   - `supervisor()` — BelongsTo(User), FK: supervisor_id
-  - `currentStatus()` — BelongsTo(ProjectStatus), FK: current_status_id
-  - `basedOn()` — BelongsTo(Project), FK: based_on_project_id (self-referential)
-  - `students()` — HasMany(ProjectStudent)
-  - `documents()` — HasMany(ProjectDocument)
-  - `evaluations()` — HasMany(Evaluation)
+  - `createdBy()` — BelongsTo(User), FK: created_by
+  - `status()` — BelongsTo(ProjectStatus), FK: status_id
+  - `basedOnProject()` — BelongsTo(Project), FK: based_on_project_id (points at the *new* `projects`
+    table — "a proposal building on a previously finished project", not another proposal)
+  - `students()` — HasMany(ProposalStudent)
+  - `instantiatedProject()` — HasOne(Project)
+- **Helper methods:**
+  - `isEditable(): bool` — `status_id === STATUS_PENDING`
+  - `isArchived(): bool` — `status_id === STATUS_ARCHIVED`
+- **Permission methods (ported from the old flat `Project::canBeModifiedBy()`/`canBeArchivedBy()`):**
+  - `canBeModifiedBy(User $user): bool` — true for super_admin unconditionally; otherwise requires
+    `status_id === STATUS_PENDING` AND (dept_manager of this proposal's department, OR the creator
+    (`created_by === $user->id`) also in this proposal's department). Backs replace/delete.
+  - `canBeInstantiatedBy(User $user): bool` — true for super_admin unconditionally; otherwise
+    requires dept_manager of this proposal's department AND `status_id === STATUS_PENDING`.
+- **`instantiateProject(User $actor): Project`** — the single atomic action, wrapped in
+  `DB::transaction()`: updates `status_id` to `STATUS_ARCHIVED`, then creates the linked `Project`
+  row via `instantiatedProject()->create(['status_id' => Project::STATUS_IN_PROGRESS,
+  'instantiated_by' => $actor->id, 'instantiated_at' => now()])`. Either both happen or neither
+  does (see Section 11's InstantiateProjectTest/ProposalModelTest for the rollback proof).
+
+### app/Models/Project.php (full rewrite, 2026-08-24 split)
+
+The actual in-progress/graded work. See Section 2's `projects` table.
+
+- **Table:** projects
+- **Traits:** HasFactory
+- **Constants:** `STATUS_IN_PROGRESS = 1`, `STATUS_ARCHIVED = 2` (backs
+  `project_lifecycle_status.id` — a **different** table/meaning than `Proposal::STATUS_ARCHIVED`/
+  `STATUS_PENDING` above, which back `project_status.id`, despite the same numeric-looking pattern)
+- **Fillable:** proposal_id, status_id, final_score, instantiated_by, instantiated_at, visit_count, is_deleted
+- **`$appends`:** `['supervisor', 'students']` — computed accessors, never real columns (see below);
+  fired automatically on every JSON serialization of a Project, including inside paginated lists
+- **Casts:** is_deleted (boolean), final_score (decimal:2), instantiated_at (datetime)
+- **Relationships:**
+  - `proposal()` — BelongsTo(Proposal)
+  - `instantiatedBy()` — BelongsTo(User), FK: instantiated_by
+  - `status()` — BelongsTo(ProjectLifecycleStatus), FK: status_id
   - `examiners()` — BelongsToMany(Examiner, pivot: project_examiners), using ProjectExaminer pivot model, withPivot('assigned_by'), withTimestamps()
+  - `evaluations()` — HasMany(Evaluation)
+- **Read-by-reference accessors** (`Attribute::get`, read-only; proxy through `proposal` instead of
+  duplicating data onto `projects` — callers must eager-load `proposal.supervisor`/
+  `proposal.students` to avoid an N+1, since both accessors fire on every row):
+  - `supervisor()` — `$this->proposal?->supervisor`
+  - `students()` — `$this->proposal?->students ?? collect()`
+- **Removed from the old flat model:** `department()`/`specialization()`/`createdBy()`/
+  `currentStatus()`/`basedOn()`/`documents()` relationships and the `canBeModifiedBy()`/
+  `canBeArchivedBy()` permission methods no longer exist on `Project` — department/specialization/
+  creator are proposal-level facts read via `->proposal`, and the permission methods moved to
+  `Proposal` (see above) since only proposals are modified/instantiated now, never projects
+  directly.
 
 ### app/Models/ProjectStatus.php
 
@@ -311,24 +481,37 @@ Note: Only `archived` (id=1) has is_active=true. The rest are Phase 2 statuses.
 - **Fillable:** status_name, sort_order, is_active
 - **Casts:** is_active (boolean)
 - **Relationships:**
-  - `projects()` — HasMany(Project), FK: current_status_id
+  - `proposals()` — HasMany(Proposal), FK: status_id (fixed during the Task 8 code review — was
+    still `projects()` → HasMany(Project) via `current_status_id`, a column that no longer exists
+    on `projects`; `ProjectStatus` backs `proposals.status_id` post-split, so it needed a
+    `proposals()` relation, not a dead `projects()` one)
 
-### app/Models/ProjectStudent.php
+### app/Models/ProjectLifecycleStatus.php (added 2026-08-24, split)
 
-- **Table:** project_students
-- **Fillable:** project_id, full_name, registration_number, status, withdrawal_date
+Reference table model for `projects.status_id` (the Project lifecycle) — independent from
+`ProjectStatus` above (see Section 2's note on the two tables).
+
+- **Table:** project_lifecycle_status (explicit `$table`)
+- **Fillable:** status_name, sort_order, is_active
+- **Casts:** is_active (boolean)
+- **Relationships:**
+  - `projects()` — HasMany(Project), FK: status_id
+
+### app/Models/ProposalStudent.php (added 2026-08-24, split — replaces ProjectStudent)
+
+- **Table:** proposal_students
+- **Fillable:** proposal_id, full_name, registration_number, status, withdrawal_date
 - **Casts:** withdrawal_date (date)
 - **Relationships:**
-  - `project()` — BelongsTo(Project)
+  - `proposal()` — BelongsTo(Proposal)
 
-### app/Models/ProjectDocument.php
+### Removed models (2026-08-24, split; files deleted during the Task 8 code review)
 
-- **Table:** project_documents
-- **Fillable:** project_id, document_type, file_path, approved_by, is_final, approved_at
-- **Casts:** is_final (boolean), approved_at (datetime)
-- **Relationships:**
-  - `project()` — BelongsTo(Project)
-  - `approvedBy()` — BelongsTo(User), FK: approved_by
+- **`app/Models/ProjectStudent.php`** and **`app/Models/ProjectDocument.php`** — their backing
+  tables (`project_students`, `project_documents`) were both dropped by the split (see Section 2).
+  Left on disk as dead code after the split (confirmed unreferenced anywhere in `app/`,
+  `resources/js/`, `routes/`, `database/`, or `tests/`); both `.php` files were deleted as part of
+  the Task 8 code review.
 
 ### app/Models/ProjectExaminer.php
 
@@ -366,13 +549,21 @@ Base controller. Empty — extends Laravel's base Controller.
 
 ### app/Http/Controllers/DashboardController.php
 
-**Purpose:** Renders the dashboard with role-based statistics (this controller is present but the /dashboard route now maps to ReportController::dashboard()).
+**Purpose:** Renders the dashboard with role-based statistics (this controller is present but the /dashboard route now maps to ReportController::dashboard() — confirmed unreachable via routes/web.php).
 
 | Method | HTTP + URL | Receives | Does | Returns | Roles |
 |---|---|---|---|---|---|
 | index() | GET /dashboard | Request | Builds stats array based on role | Inertia: Dashboard | All authenticated |
 
 Role branching: super_admin gets total_users, total_projects, total_departments; dept_manager gets dept_projects count; supervisor gets supervised_projects count; default gets total_projects.
+
+**Accuracy flag (found during this doc pass, not fixed — Task 8 is docs-only):** this controller's
+internals are now stale post-split and would error if ever reachable again. `deptManagerStats()`
+queries `Project::where('department_id', $user->department_id)` — `projects` has no
+`department_id` column any more (it moved to `proposals`). `supervisorStats()` calls
+`$user->supervisedProjects()` — renamed to `supervisedProposals()` on `User` (see Section 3). Since
+`/dashboard` is routed to `ReportController::dashboard()` instead, this is dead code today, not a
+live bug — flagged here for a future cleanup/deletion pass.
 
 ### app/Http/Controllers/ReportController.php
 
@@ -399,7 +590,7 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 | store() | POST /departments | StoreDepartmentRequest | Department::create() | Redirect to index | super_admin |
 | edit() | GET /departments/{dept}/edit | Department | Aborts 403 if dept_manager tries another dept | Inertia: Departments/Edit | super_admin, dept_manager |
 | update() | PUT/PATCH /departments/{dept} | UpdateDepartmentRequest | Aborts 403 if dept_manager tries another dept | Redirect to index | super_admin, dept_manager |
-| destroy() | DELETE /departments/{dept} | Department | Blocks if dept has projects; calls dept->delete() | Redirect to index | super_admin |
+| destroy() | DELETE /departments/{dept} | Department | Blocks if dept has proposals (`department->proposals()->exists()`, renamed 2026-08-24 from `->projects()`); calls dept->delete() | Redirect to index | super_admin |
 
 ### app/Http/Controllers/SpecializationController.php
 
@@ -409,37 +600,64 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 |---|---|---|---|---|---|
 | store() | POST /specializations | StoreSpecializationRequest | Specialization::create() | Redirect back | super_admin, dept_manager |
 | update() | PUT /specializations/{spec} | UpdateSpecializationRequest | spec->update() | Redirect back | super_admin, dept_manager |
-| destroy() | DELETE /specializations/{spec} | Specialization | Blocks if spec has projects; spec->delete() | Redirect back | super_admin, dept_manager |
+| destroy() | DELETE /specializations/{spec} | Specialization | Blocks if spec has proposals (`specialization->proposals()->exists()`, renamed 2026-08-24 from `->projects()`); spec->delete() | Redirect back | super_admin, dept_manager |
 
-### app/Http/Controllers/ProjectController.php
+### app/Http/Controllers/ProjectController.php (full rewrite, 2026-08-24 split)
 
-**Purpose:** Full CRUD for projects with approval workflow and soft delete.
+**Purpose:** Thin, read-only listing/detail of instantiated projects. No create/store/edit/update/
+destroy — all project creation/replace/delete/instantiate happens on the owning `Proposal` (see
+`ProposalController` below). `finalize()` (added 2026-08-25) is the one exception to this
+thin-controller pattern — it's the sole write path on `Project` directly.
 
 | Method | HTTP + URL | Receives | Does | Returns | Roles |
 |---|---|---|---|---|---|
-| index() | GET /projects | Request (filters) | SearchService::searchProjects() + getFilterOptions() | Inertia: Projects/Index | auth |
-| create() | GET /projects/create | — | Passes depts, specializations, supervisors | Inertia: Projects/Create | dept_staff, dept_manager, super_admin |
-| store() | POST /projects | StoreProjectRequest | PDF upload; status=archived for managers, proposal_submitted for staff; creates students + document; detectSimilarity flash | Redirect to show | auth (role check in method) |
-| show() | GET /projects/{id} | id | Eager-loads all relations; increments visit_count; returns availableExaminers | Inertia: Projects/Show | auth |
-| edit() | GET /projects/{id}/edit | id | authorizeEdit() check; passes form data | Inertia: Projects/Edit | auth (role check in method) |
-| update() | PUT /projects/{id} | UpdateProjectRequest | authorizeEdit(); replaces PDF if provided; replaces students; detectSimilarity flash | Redirect to show | auth (role check in method) |
-| destroy() | DELETE /projects/{id} | id | Only dept_manager/super_admin; sets is_deleted=true | Redirect to index | dept_manager, super_admin |
-| approve() | POST /projects/{id}/approve | id | Sets current_status_id=1 (archived) | Redirect back | dept_manager, super_admin |
+| index() | GET /projects | Request | `Project::with(['proposal.department','proposal.specialization','proposal.supervisor','proposal.students','status'])->where('is_deleted', false)->latest()->paginate(15)` | Inertia: Projects/Index | auth |
+| show() | GET /projects/{id} | id | Eager-loads the same proposal relations plus `status`, `examiners.department:id,name`, `evaluations`; increments visit_count; returns `availableExaminers` (examiners not yet assigned), plus `canFinalize`/`finalizationBlockers` for the finalize card | Inertia: Projects/Show | auth |
+| finalize() | POST /projects/{id}/finalize | FinalizeProjectRequest, id | Stores uploaded PDF to `projects/final` disk, sets `final_file_path` + `status_id`=STATUS_ARCHIVED | Redirect to projects.show | per `canBeFinalizedBy()` (dept_manager/dept_staff of that department, or super_admin) — enforced in the Form Request |
 
-**Private method `authorizeEdit(Project $project)`:** super_admin may edit any; dept_manager may edit within own dept; dept_staff may only edit pending (status_id=2) projects in own dept; otherwise abort 403.
+Note (per the controller's own inline comment): `proposal.supervisor` and `proposal.students` must
+both be eager-loaded on every query even where a view doesn't render students, because
+`Project::$appends = ['supervisor', 'students']` fires both accessors during JSON serialization for
+every row — omitting either causes an N+1 across a whole paginated page.
+
+### app/Http/Controllers/ProposalController.php (new, 2026-08-24 split)
+
+**Purpose:** Full CRUD for proposals (the paper-approved form) plus `instantiate()`, the atomic
+مقترح→مؤرشف + Project-creation action.
+
+| Method | HTTP + URL | Receives | Does | Returns | Roles |
+|---|---|---|---|---|---|
+| index() | GET /proposals | Request (filters) | `SearchService::searchProposals()` + `getFilterOptions()` | Inertia: Proposals/Index | auth |
+| create() | GET /proposals/create | — | `abort(403)` unless dept_staff/dept_manager/super_admin; passes departments, specializations, supervisors | Inertia: Proposals/Create | dept_staff, dept_manager, super_admin |
+| store() | POST /proposals | StoreProposalRequest | Optional PDF upload to `storage/public/projects`; creates Proposal (`status_id`=STATUS_PENDING, `created_by`=Auth::id()); creates ProposalStudent rows; `detectSimilarity()` flash | Redirect to proposals.show | dept_staff (own dept only, enforced in the Form Request), dept_manager, super_admin |
+| show() | GET /proposals/{id} | id | Eager-loads department/specialization/supervisor/students/status/createdBy/instantiatedProject | Inertia: Proposals/Show | auth |
+| edit() | GET /proposals/{id}/edit | id | `abort(403)` unless `canBeModifiedBy()`; passes form data + depts/specs/supervisors | Inertia: Proposals/Edit | per `canBeModifiedBy()` |
+| update() | PUT /proposals/{id} | UpdateProposalRequest | Replaces PDF if provided (deletes old file first); replaces students (delete-all then recreate); `detectSimilarity()` flash | Redirect to proposals.show | per `canBeModifiedBy()`; moving to a different department via replace is super_admin-only even for a passing dept_manager (enforced in `UpdateProposalRequest`) |
+| destroy() | DELETE /proposals/{id} | DeleteProposalRequest, id | Sets `is_deleted`=true | Redirect to proposals.index | per `canBeModifiedBy()` |
+| instantiate() | POST /proposals/{id}/instantiate | InstantiateProjectRequest, id | Calls `Proposal::instantiateProject($user)` — atomic مقترح→مؤرشف + creates linked Project | Redirect to projects.show | per `canBeInstantiatedBy()` (dept_manager of that department, or super_admin) |
+
+**Form Requests** (all in `app/Http/Requests/`): `StoreProposalRequest` (role + dept_staff-own-dept
+check), `UpdateProposalRequest` (`canBeModifiedBy()` + cross-department super_admin-only guard),
+`DeleteProposalRequest` (`canBeModifiedBy()`), `InstantiateProjectRequest` (`canBeInstantiatedBy()`
+— its route parameter is named `id`, not `proposal`, since `proposals/{id}/instantiate` is defined
+outside the `Route::resource()` call; see Section 5). These replace the old flat model's
+`StoreProjectRequest`/`UpdateProjectRequest`/`DeleteProjectRequest`/`ArchiveProjectRequest`.
 
 ### app/Http/Controllers/SearchController.php
 
-**Purpose:** Global search page and autocomplete suggestions endpoint.
+**Purpose:** Global search page and autocomplete suggestions endpoint — now searches `Proposal`
+rows, not `Project`.
 
 | Method | HTTP + URL | Receives | Does | Returns | Roles |
 |---|---|---|---|---|---|
-| index() | GET /search | Request (filters) | SearchService::searchProjects(); eager-loads students | Inertia: Search/Index | auth |
-| suggestions() | GET /search/suggestions | ?q=string | Returns up to 5 project titles matching query (min 2 chars), ordered by visit_count | JSON array | auth |
+| index() | GET /search | Request (filters) | `SearchService::searchProposals()`; loads `students` (id, full_name, proposal_id) via `loadMissing` | Inertia: Search/Index | auth |
+| suggestions() | GET /search/suggestions | ?q=string | Returns up to 5 `Proposal` titles matching query (min 2 chars), ordered by `->latest()` — **not** by visit_count any more (`Proposal` has no `visit_count` column; that field lives on `Project` now, see Section 2) | JSON array | auth |
 
 ### app/Http/Controllers/ExaminerController.php
 
-**Purpose:** CRUD for examiner records with optional department filter.
+**Purpose:** CRUD for examiner records with optional department filter. Unchanged by the split
+(verified against current source) — `examiner->projects()` still resolves correctly since
+`project_examiners` still attaches to `projects`, unaffected by the split.
 
 | Method | HTTP + URL | Receives | Does | Returns | Roles |
 |---|---|---|---|---|---|
@@ -457,6 +675,10 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 | assign() | POST /projects/{id}/assign-examiner | int $projectId, AssignExaminerRequest | Checks max 2 cap; checks duplicate; attaches with assigned_by=Auth::id() | Redirect back | super_admin, dept_manager |
 | remove() | DELETE /projects/{id}/examiners/{examinerId} | int $projectId, int $examinerId | Detaches examiner from project | Redirect back | super_admin, dept_manager |
 
+Both `assign()` and `remove()` now reject the request with a flash error ("لا يمكن التعديل على
+مشروع مؤرشف نهائيًا") if the project's `status_id === Project::STATUS_ARCHIVED` (added 2026-08-25,
+alongside the finalize flow).
+
 ### app/Http/Controllers/EvaluationController.php
 
 **Purpose:** Add evaluation notes per examiner and update a project's final score.
@@ -465,6 +687,10 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 |---|---|---|---|---|---|
 | store() | POST /projects/{id}/evaluation | int $projectId, StoreEvaluationRequest | project->evaluations()->create(validated) | Redirect back | super_admin, dept_manager |
 | updateScore() | PATCH /projects/{id}/score | int $projectId, UpdateScoreRequest | project->update(['final_score' => ...]) | Redirect back | super_admin, dept_manager |
+
+Both `store()` and `updateScore()` now reject the request with a flash error ("لا يمكن التعديل على
+مشروع مؤرشف نهائيًا") if the project's `status_id === Project::STATUS_ARCHIVED` (added 2026-08-25,
+alongside the finalize flow).
 
 ### app/Http/Controllers/ImportController.php
 
@@ -476,17 +702,39 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 | downloadTemplate() | GET /import/template | — | Returns ProjectImportTemplate as XLSX | XLSX download | super_admin |
 | preview() | POST /import/preview | file (xlsx, max 5120KB) | ProjectsImport(dryRun:true); flashes preview summary | Redirect back | super_admin |
 | import() | POST /import/run | file (xlsx, max 5120KB) | ProjectsImport(dryRun:false); flashes import_summary | Redirect back | super_admin |
-| uploadPdfs() | POST /import/pdfs | zip_file (zip, max 51200KB) | Extracts ZIP; matches PDF filenames to project_title; saves to public storage; flashes pdf_summary | Redirect back | super_admin |
+| uploadPdfs() | POST /import/pdfs | zip_file (zip, max 51200KB) | Extracts ZIP; matches PDF filenames to `Proposal::title`; saves to public storage; sets `draft_file_path` on the matched proposal; flashes pdf_summary | Redirect back | super_admin |
+
+The controller itself (index/downloadTemplate/preview/import) is unchanged and still accurate.
+`app/Imports/ProjectsImport.php` (invoked by preview()/import()) **was** rewritten for the split:
+each valid row now creates a `Proposal` and immediately calls `$proposal->instantiateProject($actor)`,
+then unconditionally sets the resulting `Project` to `STATUS_ARCHIVED` (with `final_score` applied
+if present, null otherwise) — matching the old importer's "create it pre-archived" behavior for
+*all* bulk-imported historical work, not just rows that happen to carry a score (fixed during the
+Task 8 code review — the row previously only archived when `final_score` was present, silently
+leaving ungraded imported rows invisible on the public site). See Section 6 (ProjectsImport isn't
+itself a Service class, but this is where its logic is documented since Section 4 covers the
+controller that drives it).
+
+`uploadPdfs()` was also fixed during the Task 8 code review: it previously called
+`Project::where('project_title', $baseName)` and, on a match, `$project->update(['draft_file_path'
+=> ...])` and `$project->documents()->create(...)` — none of `project_title`, `draft_file_path`, or
+the `documents()` relationship exist on the post-split `Project` model (`project_title`/
+`draft_file_path` moved to `Proposal`; `documents()` and the `project_documents` table were dropped
+entirely), so the first real ZIP upload would have thrown an "unknown column" error. Now matches
+against `Proposal::title` and sets `draft_file_path` directly on the proposal, with no document
+record created (there is nothing to create — the table is gone).
 
 ### app/Http/Controllers/PublicController.php
 
-**Purpose:** Public-facing pages (no authentication required).
+**Purpose:** Public-facing pages (no authentication required) — now query `Project`, filtered to
+`Project::STATUS_ARCHIVED`, eager-loading `proposal.*` for the title/description/dept/spec/
+supervisor/students that used to live directly on the old flat `Project`.
 
 | Method | HTTP + URL | Receives | Does | Returns | Roles |
 |---|---|---|---|---|---|
-| index() | GET / | — | Counts archived projects, depts, specs for landing page stats | Inertia: Welcome | Public |
-| browse() | GET /browse | ?search, ?department_id, ?specialization_id, ?academic_year | Filters archived (status_id=1, not deleted); paginates 12 per page | Inertia: Public/Browse | Public |
-| show() | GET /browse/{id} | int $id | Loads only archived non-deleted project; increments visit_count; fetches 3 related by specialization | Inertia: Public/Show | Public |
+| index() | GET / | — | Counts `Project::where('status_id', Project::STATUS_ARCHIVED)->where('is_deleted', false)`, depts, specs for landing page stats | Inertia: Welcome | Public |
+| browse() | GET /browse | ?search, ?department_id, ?specialization_id, ?academic_year | `Project::query()->where('status_id', Project::STATUS_ARCHIVED)->where('is_deleted', false)->with(['proposal.department','proposal.specialization','proposal.supervisor','proposal.students'])`; search/dept/spec/year filters all applied via `whereHas('proposal', ...)`; paginates 12 per page; `years` filter option pulled from `Proposal::whereHas('instantiatedProject', fn ($q) => $q->where('status_id', Project::STATUS_ARCHIVED))` | Inertia: Public/Browse | Public |
+| show() | GET /browse/{id} | int $id | Loads only an archived, non-deleted `Project` (`proposal.*`, `examiners`, `evaluations`); increments visit_count; fetches 3 related archived Projects sharing `proposal.specialization_id` | Inertia: Public/Show | Public |
 
 ### app/Http/Controllers/Admin/UserController.php
 
@@ -558,14 +806,16 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 | DELETE | /projects/{id}/examiners/{examinerId} | ProjectExaminerController@remove | auth, role:super_admin,dept_manager | super_admin, dept_manager |
 | POST | /projects/{id}/evaluation | EvaluationController@store | auth, role:super_admin,dept_manager | super_admin, dept_manager |
 | PATCH | /projects/{id}/score | EvaluationController@updateScore | auth, role:super_admin,dept_manager | super_admin, dept_manager |
+| GET | /proposals | ProposalController@index | auth | All authenticated |
+| POST | /proposals | ProposalController@store | auth | dept_staff (own dept), dept_manager, super_admin (checked in StoreProposalRequest) |
+| GET | /proposals/create | ProposalController@create | auth | dept_staff, dept_manager, super_admin (checked in controller) |
+| GET | /proposals/{proposal} | ProposalController@show | auth | All authenticated |
+| GET | /proposals/{proposal}/edit | ProposalController@edit | auth | Per `Proposal::canBeModifiedBy()` (checked in controller) |
+| PUT/PATCH | /proposals/{proposal} | ProposalController@update | auth | Per `Proposal::canBeModifiedBy()` (checked in UpdateProposalRequest) |
+| DELETE | /proposals/{proposal} | ProposalController@destroy | auth | Per `Proposal::canBeModifiedBy()` (checked in DeleteProposalRequest) |
+| POST | /proposals/{id}/instantiate | ProposalController@instantiate | auth | dept_manager of that proposal's department while مقترح, or super_admin (checked in InstantiateProjectRequest; route name `proposals.instantiate`) |
 | GET | /projects | ProjectController@index | auth | All authenticated |
-| POST | /projects | ProjectController@store | auth | All authenticated (role checked in controller) |
-| GET | /projects/create | ProjectController@create | auth | All authenticated (role checked in controller) |
-| GET | /projects/{project} | ProjectController@show | auth | All authenticated |
-| GET | /projects/{project}/edit | ProjectController@edit | auth | All authenticated (role checked in controller) |
-| PUT | /projects/{project} | ProjectController@update | auth | All authenticated (role checked in controller) |
-| DELETE | /projects/{project} | ProjectController@destroy | auth | dept_manager, super_admin (checked in method) |
-| POST | /projects/{id}/approve | ProjectController@approve | auth, role:dept_manager,super_admin | dept_manager, super_admin |
+| GET | /projects/{id} | ProjectController@show | auth | All authenticated |
 | GET | /search | SearchController@index | auth | All authenticated |
 | GET | /search/suggestions | SearchController@suggestions | auth | All authenticated |
 | GET | /departments/create | DepartmentController@create | auth, role:super_admin | super_admin |
@@ -577,6 +827,15 @@ Role branching: super_admin gets total_users, total_projects, total_departments;
 | POST | /import/run | ImportController@import | auth, role:super_admin | super_admin |
 | POST | /import/pdfs | ImportController@uploadPdfs | auth, role:super_admin | super_admin |
 
+`/proposals` is a full `Route::resource('proposals', ProposalController::class)` (index/create/
+store/show/edit/update/destroy) plus the standalone `POST proposals/{id}/instantiate` route (name
+`proposals.instantiate`) — together these replace the old flat model's `Route::resource('projects',
+...)` + `POST projects/{id}/archive`. `/projects` is now thin: only `GET projects` (name
+`projects.index`) and `GET projects/{id}` (name `projects.show`) remain — no create/store/edit/
+update/destroy on `Project` at all. The examiner/evaluation/score routes
+(`projects/{id}/assign-examiner` etc.) are unchanged by the split — still declared under
+`projects/{id}`, since examiners/evaluations attach to an instantiated `Project`, not a `Proposal`.
+
 Auth routes (login, logout, password reset, email verification) are defined in routes/auth.php. Registration is disabled — POST /register redirects to /login with an error flash.
 
 ---
@@ -585,25 +844,30 @@ Auth routes (login, logout, password reset, email verification) are defined in r
 
 ### app/Services/SearchService.php
 
-**Purpose:** Encapsulates all project search, filter, and similarity detection logic.
+**Purpose:** Encapsulates all proposal search, filter, and similarity detection logic. Renamed and
+retargeted from `Project` to `Proposal` by the 2026-08-24 split (proposals are the searchable/
+listable entity; instantiated projects are found by drilling into a proposal's result, not by
+searching directly).
 
 | Method | Parameters | Return | Description |
 |---|---|---|---|
-| searchProjects(array $filters) | filters: search, department_id, specialization_id, academic_year, supervisor_id, status, sort | LengthAwarePaginator (15 per page) | Builds query; applies all filters; eager-loads department/specialization/supervisor/currentStatus; withCount('students'); sort options: title, visit_count, created_at (default) |
-| detectSimilarity(string $title, ?int $excludeId) | title string, optional excludeId to skip on edit | Collection of up to 5 Projects | LIKE query on project_title; excludes current project when editing; returns id, project_title, academic_year, department_id with department relation |
-| getFilterOptions() | — | array | Returns departments (with nested specializations), academic_years (distinct ordered desc), supervisors (role=supervisor) |
+| searchProposals(array $filters) | filters: search, department_id, specialization_id, academic_year, supervisor_id, status, sort | LengthAwarePaginator (15 per page) | Renamed from `searchProjects()`. Builds a `Proposal` query; applies all filters (`search` LIKE on title/description; department/specialization/academic_year/supervisor exact match; `status === 'active'` filters to `status_id === Proposal::STATUS_ARCHIVED`); eager-loads department/specialization/supervisor/status; `withCount('students')`. Sort options: `title`, default `->latest()` (created_at) — the old `visit_count` sort option no longer applies, since `Proposal` has no `visit_count` column (that field lives on `Project` now) |
+| detectSimilarity(string $title, ?int $excludeId) | title string, optional excludeId to skip on edit | Collection of up to 5 Proposals | LIKE query on `title` (not `project_title`); excludes current proposal when editing; returns id, title, academic_year, department_id with department relation |
+| getFilterOptions() | — | array | Returns departments (with nested specializations), academic_years (distinct, from `Proposal`, ordered desc), supervisors (role=supervisor) |
 
 ### app/Services/ReportService.php
 
-**Purpose:** Generates all statistical data for reports and dashboard.
+**Purpose:** Generates all statistical data for reports and dashboard. Full rewrite for the split —
+proposal-shaped stats (counts, breakdowns) now query `Proposal` directly; anything score-based
+joins `projects` → `proposals` since `final_score` lives on `Project`.
 
 | Method | Parameters | Return | Description |
 |---|---|---|---|
-| getDashboardStats() | — | array | total_projects, total_departments, projects_this_year (current year LIKE), pending_approvals (status_id=2), recent_projects (last 5 with dept/spec/status), by_status (grouped counts joined with project_status) |
-| getDepartmentReport(?int $departmentId) | Optional dept filter | array with keys: departments, supervisors | Per-dept: project_count, avg_score, scored_count, specializations breakdown; supervisors with project_count and department |
-| getSpecializationTrends() | — | array with keys: top_specializations, rare_specializations, by_year | Top 10 by project count; bottom 5 (rare); grouped by_year data |
-| getSupervisorReport() | — | array | All supervisors with project_count, avg_score, scored_count, by_year breakdown (grouped per supervisor) |
-| getYearlyComparisonReport() | — | array with keys: yearly, department_by_year | Per-year count + growth % calculation; dept×year matrix grouping |
+| getDashboardStats() | — | array | `total_projects` (really a `Proposal::where('is_deleted', false)->count()`, kept as the key name for frontend compatibility), total_departments, projects_this_year (current year LIKE on `Proposal.academic_year`), pending_approvals (`Proposal::where('status_id', Proposal::STATUS_PENDING)`), recent_projects (last 5 `Proposal` rows with department/specialization/status), by_status (grouped `Proposal` counts joined with `project_status`) |
+| getDepartmentReport(?int $departmentId) | Optional dept filter | array with keys: departments, supervisors | Per-dept `project_count` via `Department::withCount('proposals as project_count', ...)`; `avg_score`/`scored_count` via `Project::query()->join('proposals', 'projects.proposal_id', '=', 'proposals.id')->whereNotNull('projects.final_score')` grouped by `proposals.department_id`; supervisors via `User::role('supervisor')->withCount('supervisedProposals as project_count', ...)` |
+| getSpecializationTrends() | — | array with keys: top_specializations, rare_specializations, by_year | Top 10 / bottom 5 specializations by `withCount('proposals as project_count', ...)`; `by_year` grouped from `Proposal` joined to `specializations` |
+| getSupervisorReport() | — | array | All supervisors (`role('supervisor')`) with `project_count` via `supervisedProposals`, `avg_score`/`scored_count` via the same `projects`⋈`proposals` join as `getDepartmentReport()` grouped by `proposals.supervisor_id`, `by_year` breakdown grouped from `Proposal` |
+| getYearlyComparisonReport() | — | array with keys: yearly, department_by_year | Per-year `Proposal` count + growth % calculation; dept×year matrix via `Proposal` joined to `departments` |
 
 ---
 
@@ -619,11 +883,13 @@ Auth routes (login, logout, password reset, email verification) are defined in r
 
 ### resources/js/Pages/Dashboard.vue
 
-- **Purpose:** Role-based dashboard with stats cards, recent projects table, status bar chart, and report quick-links
+- **Purpose:** Role-based dashboard with stats cards, recent proposals table, status bar chart, and report quick-links
 - **URL:** GET /dashboard
-- **Props:** `stats: DashboardStats` (structure varies by role)
+- **Props:** `stats: DashboardStats` (structure varies by role); `stats.recent_projects` entries are
+  now `Proposal`-shaped (`{ id, title, academic_year, department, status }`) — since the split,
+  **not** the old flat `Project`-shaped (`project_title`/`current_status`)
 - **Interactions:**
-  - super_admin: 4 StatsCard components + recent projects table + status bar chart + 4 report quick-links
+  - super_admin: 4 StatsCard components + recent proposals table (rows link to `/proposals/{id}`) + status bar chart + 4 report quick-links
   - dept_manager: 3 stats + specializations table + supervisors list + 4 report quick-links
   - default: 1 stat card + link to /projects
 - **Roles:** All authenticated
@@ -652,44 +918,98 @@ Auth routes (login, logout, password reset, email verification) are defined in r
 - **Interactions:** Edit name/code/description; PUT to departments.update
 - **Roles:** super_admin, dept_manager (own dept only)
 
-### resources/js/Pages/Projects/Index.vue
+### resources/js/Pages/Proposals/Index.vue (renamed 2026-08-24 from Projects/Index.vue, split)
 
-- **Purpose:** Paginated project list with search, advanced filters, and active filter chips
-- **URL:** GET /projects
-- **Props:** `projects: PaginatedProjects`, `filterOptions: FilterOptions`, `filters: object`
-- **Interactions:** SearchBar with debounced autocomplete; FilterPanel with cascaded dept/spec/year/supervisor/sort; active filter chips (clickable x to remove); pagination; role-based Edit/Delete/Approve buttons per row; SimilarityWarning banner from flash
-- **Roles:** All authenticated (role-based button visibility)
+- **Purpose:** Paginated proposal list with search, advanced filters, active filter chips, and the
+  "تنزيل المشروع" instantiate action
+- **URL:** GET /proposals
+- **Props:** `proposals: PaginatedProposals`, `filterOptions: FilterOptions`, `filters: object`
+- **Interactions:** SearchBar with debounced autocomplete (via `search.suggestions`); FilterPanel
+  with cascaded dept/spec/year/supervisor/sort; active filter chips (clickable × to remove);
+  pagination; status badge via `@/composables/useProposalStatus` (`statusColor`/`statusLabel`/
+  `isProposalStatus`); per-row role-based buttons: عرض (always), تعديل (`canReplace`, mirrors
+  `Proposal::canBeModifiedBy()`), **تنزيل المشروع** (`canInstantiate` — dept_manager of that
+  proposal's department while مقترح, or super_admin; opens a `ConfirmDelete`-styled confirm dialog,
+  then `router.post(route('proposals.instantiate', id))`), حذف (`canDeleteProject`, same rule as
+  تعديل); SimilarityWarning banner from `flash.similarity_warning`
+- **Roles:** All authenticated (role-based button visibility); create button (`+ إضافة مقترح جديد`)
+  shown only to dept_staff/dept_manager/super_admin
 
-### resources/js/Pages/Projects/Create.vue
+### resources/js/Pages/Proposals/Create.vue (renamed 2026-08-24 from Projects/Create.vue, split)
 
-- **Purpose:** Form to create a new project
-- **URL:** GET /projects/create
+- **Purpose:** Form to create a new proposal
+- **URL:** GET /proposals/create
 - **Props:** `departments`, `specializations`, `supervisors`
-- **Interactions:** Title, description, academic_year inputs; cascaded department/specialization select; dynamic students add/remove rows; PDF file upload with progress bar; uses forceFormData for nested arrays and file upload
+- **Interactions:** Title, description, academic_year inputs; cascaded department/specialization select; dynamic students add/remove rows; PDF file upload; `form.post(route('proposals.store'), { forceFormData: true })`
 - **Roles:** dept_staff, dept_manager, super_admin
 
-### resources/js/Pages/Projects/Edit.vue
+### resources/js/Pages/Proposals/Edit.vue (renamed 2026-08-24 from Projects/Edit.vue, split)
 
-- **Purpose:** Form to edit an existing project
-- **URL:** GET /projects/{id}/edit
-- **Props:** `project` (with students and documents), `departments`, `specializations`, `supervisors`
-- **Interactions:** Pre-filled form; current PDF shown with download link; option to replace PDF; uses form.put() with forceFormData
-- **Roles:** super_admin (any), dept_manager (own dept), dept_staff (pending + own dept only)
+- **Purpose:** Form to edit an existing proposal
+- **URL:** GET /proposals/{id}/edit
+- **Props:** `proposal` (with `students`), `departments`, `specializations`, `supervisors`
+- **Interactions:** Pre-filled form; current PDF (`draft_file_path`) shown with download link;
+  option to replace PDF; `form.put(route('proposals.update', id), { forceFormData: true })`. Note:
+  `Edit.vue` no longer shows `documents` — that relationship/table was dropped by the split (see
+  Section 2/3); it never carried a real UI feature pre-split either
+- **Roles:** Per `Proposal::canBeModifiedBy()` — super_admin (any, while مقترح or مؤرشف), dept_manager (own dept, only while مقترح), dept_staff (creator + own dept, only while مقترح)
 
-### resources/js/Pages/Projects/Show.vue
+### resources/js/Pages/Proposals/Show.vue (renamed 2026-08-24 from Projects/Show.vue, split)
 
-- **Purpose:** Full project detail page with 2-column layout
-- **URL:** GET /projects/{id}
-- **Props:** `project: Project` (with all relations eager-loaded), `availableExaminers: Examiner[]`
-- **Interactions:** Main column: description, students table, examiners/evaluations section with assign/remove; Sidebar: project meta info, ScoreInput (managers) or read-only score display + pass/fail badge, PDF download; Approve/Edit/Delete role-based header buttons; AssignExaminerModal and ConfirmDelete dialogs
+- **Purpose:** Full proposal detail page — description, students table, PDF download, and the
+  create/replace/delete/instantiate actions; no examiners/evaluations/score here any more (those
+  moved to the instantiated Project's own Show page, below)
+- **URL:** GET /proposals/{id}
+- **Props:** `proposal: Proposal` (department/specialization/supervisor/status/createdBy/
+  `instantiated_project` eager-loaded)
+- **Interactions:** Status badge (`useProposalStatus`); تعديل/حذف buttons per `canModify`
+  (mirrors `Proposal::canBeModifiedBy()`); **تنزيل المشروع** button per `canInstantiate`
+  (dept_manager of that department while مقترح, or super_admin) opens a confirm dialog then
+  `router.post(route('proposals.instantiate', id))`, redirecting server-side to the new
+  `projects.show` page on success
+- **Roles:** All authenticated (view); write actions gated as above
+
+### resources/js/Pages/Projects/Index.vue (new, thin — 2026-08-24 split)
+
+- **Purpose:** Read-only listing of instantiated projects — no search/filter/create/edit/delete;
+  those all live on the Proposals pages now
+- **URL:** GET /projects
+- **Props:** `projects: PaginatedProjects` — each row: `id`, `final_score`, `status` (from
+  `project_lifecycle_status`), and `proposal: { id, title, department, specialization, supervisor }`
+- **Interactions:** Plain table (عنوان/قسم/مشرف/حالة/درجة columns, reading `project.proposal.*` for
+  title/department/supervisor and `project.status`/`project.final_score` directly); simple
+  prev/next-style pagination; no filters, no row action buttons at all
 - **Roles:** All authenticated
+
+### resources/js/Pages/Projects/Show.vue (new, thin + examiner/evaluation/score card — 2026-08-24 split)
+
+- **Purpose:** Instantiated-project detail page: description/students read through the proposal,
+  plus the examiner assignment, evaluation notes, and final-score card that used to live on the old
+  conflated `Projects/Show.vue`
+- **URL:** GET /projects/{id}
+- **Props:** `project: Project` (`proposal` with department/specialization eager-loaded; flat
+  `project.supervisor`/`project.students` from the `$appends` accessors; `examiners`, `evaluations`,
+  `status`, `visit_count`), `availableExaminers: Examiner[]`
+- **Interactions:** Reads title/description/department/specialization/academic_year via
+  `project.proposal.*`, and supervisor/students via the flat `project.supervisor`/
+  `project.students` (unchanged shape from before the split, now sourced by the model's read-by-
+  reference accessors instead of duplicated columns); examiners/evaluations section with
+  assign/remove (`AssignExaminerModal`, `ConfirmDelete`) and per-examiner evaluation notes;
+  `ScoreInput` for dept_manager/super_admin or a read-only score + pass/fail badge (threshold 50)
+  for everyone else; no Edit/Delete/Archive header buttons at all (that logic no longer applies to
+  `Project`)
+- **Roles:** All authenticated (view); examiner/evaluation/score actions restricted to dept_manager,
+  super_admin (`canManage`)
 
 ### resources/js/Pages/Search/Index.vue
 
-- **Purpose:** Global search page with results grouped by department
+- **Purpose:** Global search page with results grouped by department — now receives `Proposal` rows directly, not `Project`
 - **URL:** GET /search
-- **Props:** `projects: PaginatedProjects`, `filterOptions`, `filters`
-- **Interactions:** SearchBar with live suggestions; project cards showing highlighted match text (v-html); student name tags; pagination
+- **Props:** `projects: PaginatedProposals` (prop name unchanged for backward compatibility with the
+  page's own internals, but each row is now a flat `Proposal` — `title`, `academic_year`,
+  `description`, `department`, `specialization`, `supervisor`, `status`, `students`,
+  `students_count`), `filterOptions`, `filters`
+- **Interactions:** SearchBar with live suggestions; project cards showing highlighted match text (v-html); student name tags; pagination; card links now point to `route('proposals.show', [project.id])` (was `projects.show`)
 - **Roles:** All authenticated
 
 ### resources/js/Pages/Examiners/Index.vue
@@ -756,7 +1076,10 @@ Auth routes (login, logout, password reset, email verification) are defined in r
 
 - **Purpose:** Public project browse page — no authentication required
 - **URL:** GET /browse
-- **Props:** `projects: Paginated`, `departments`, `specializations`, `years`, `filters`
+- **Props:** `projects: Paginated<Project>`, `departments`, `specializations`, `years`, `filters` —
+  each `Project` row now reads title/academic_year/department/specialization through
+  `project.proposal.*`, while `project.supervisor`/`project.students` stay flat (via the model's
+  `$appends` accessors) — unchanged shape from before the split
 - **Interactions:** Header with college logo and login button; search input + dept/spec/year filter selects; Apply/Reset buttons; 3-column project card grid; pagination; empty state with reset button
 - **Roles:** Public (no auth required)
 
@@ -764,7 +1087,9 @@ Auth routes (login, logout, password reset, email verification) are defined in r
 
 - **Purpose:** Public project detail page — no authentication required
 - **URL:** GET /browse/{id}
-- **Props:** `project: Project` (with all relations), `related: Project[]`
+- **Props:** `project: Project` (with all relations), `related: Project[]` — same
+  proposal.*-for-title/description/dept/spec/academic_year/draft_file_path,
+  flat-supervisor/students split as Browse.vue above
 - **Interactions:** Back link; project title, status badge, and visit count; info grid (dept, spec, supervisor, year); students table; description; PDF download button; related projects section (same specialization, up to 3)
 - **Roles:** Public (no auth required)
 
@@ -805,21 +1130,22 @@ Auth routes (login, logout, password reset, email verification) are defined in r
 - **Purpose:** Reusable search input with live autocomplete suggestions dropdown
 - **Props:** modelValue (string), placeholder (string, optional), suggestions (string[])
 - **Events emitted:** update:modelValue, @search (on enter or button click), @select (when suggestion clicked), @clear
-- **Used in:** Projects/Index.vue, Search/Index.vue
+- **Used in:** Proposals/Index.vue (renamed 2026-08-24 from Projects/Index.vue — accuracy fix, this
+  component moved with the search bar during the split), Search/Index.vue
 
 #### resources/js/components/FilterPanel.vue
 
 - **Purpose:** Collapsible advanced filter panel for project listings; also exports FilterValues type
 - **Props:** departments, specializations, years, supervisors, modelValue (FilterValues)
 - **Events emitted:** @filter-changed (emits FilterValues)
-- **Used in:** Projects/Index.vue
+- **Used in:** Proposals/Index.vue (renamed 2026-08-24 from Projects/Index.vue — accuracy fix)
 
 #### resources/js/components/SimilarityWarning.vue
 
-- **Purpose:** Warning banner displayed when a new/edited project title matches existing project titles
+- **Purpose:** Warning banner displayed when a new/edited proposal title matches existing proposal titles
 - **Props:** show (boolean), similarProjects (SimilarProject[])
 - **Events emitted:** @continue, @change-title
-- **Used in:** Projects/Index.vue (driven by flash.similarity_warning from server)
+- **Used in:** Proposals/Index.vue (renamed 2026-08-24 from Projects/Index.vue — accuracy fix; driven by flash.similarity_warning from server)
 
 #### resources/js/components/Modal.vue
 
@@ -833,7 +1159,11 @@ Auth routes (login, logout, password reset, email verification) are defined in r
 - **Purpose:** Confirmation dialog before deleting an item; shows item name
 - **Props:** show (boolean), itemName (string | undefined)
 - **Events emitted:** @confirmed, @cancelled
-- **Used in:** Projects/Index.vue, Projects/Show.vue, Departments/Index.vue, Examiners/Index.vue, Admin/Users/Index.vue
+- **Used in:** Proposals/Index.vue, Proposals/Show.vue (both accuracy-fixed 2026-08-24 — this
+  component moved with delete/instantiate-confirm dialogs from the old Projects/Index.vue and
+  Projects/Show.vue during the split), Projects/Show.vue (still — now for the remove-examiner
+  confirm, not delete-project), Departments/Index.vue, Examiners/Index.vue, Admin/Users/Index.vue.
+  **Not** Projects/Index.vue any more — the new thin project listing has no delete action.
 
 #### resources/js/components/AssignExaminerModal.vue
 
@@ -982,11 +1312,12 @@ Pre-built components from shadcn-vue, wrapping Radix Vue primitives. All are wir
 
 Orchestrates all seeders in the correct dependency order. Run with: `php artisan db:seed`
 
-**Run order:**
+**Run order (updated 2026-08-24, split — `ProjectLifecycleStatusSeeder` added):**
 1. RoleSeeder
 2. ProjectStatusSeeder
-3. AdminSeeder
-4. DummyDataSeeder
+3. ProjectLifecycleStatusSeeder
+4. AdminSeeder
+5. DummyDataSeeder
 
 ### database/seeders/RoleSeeder.php
 
@@ -996,9 +1327,21 @@ Orchestrates all seeders in the correct dependency order. Run with: `php artisan
 
 ### database/seeders/ProjectStatusSeeder.php
 
-- **Creates:** 10 project status records via `ProjectStatus::updateOrCreate()` using fixed IDs
+- **Creates:** exactly 2 project status records (id=1 مؤرشف, id=2 مقترح) via
+  `ProjectStatus::updateOrCreate()` using fixed IDs — narrowed from the original 10-status seed by
+  the pre-split 2026-08-17 lifecycle scope-down, unchanged in row count/values by the split itself
+- Since 2026-08-24, this table backs `proposals.status_id` specifically (the Proposal lifecycle) —
+  see Section 2's note distinguishing it from `project_lifecycle_status` below
 - See Section 2 (project_status table) for exact values with sort_order and is_active
 - **Command:** `php artisan db:seed --class=ProjectStatusSeeder`
+
+### database/seeders/ProjectLifecycleStatusSeeder.php (new, 2026-08-24 split)
+
+- **Creates:** exactly 2 rows in `project_lifecycle_status` (id=1 قيد التنفيذ, id=2 مؤرشف) via
+  `DB::table('project_lifecycle_status')->updateOrInsert()` — backs `projects.status_id` (the
+  Project lifecycle), independent from `ProjectStatusSeeder` above
+- See Section 2 (project_lifecycle_status table) for exact values
+- **Command:** `php artisan db:seed --class=ProjectLifecycleStatusSeeder`
 
 ### database/seeders/AdminSeeder.php
 
@@ -1010,9 +1353,11 @@ Orchestrates all seeders in the correct dependency order. Run with: `php artisan
   - role: super_admin (via assignRole)
 - **Command:** `php artisan db:seed --class=AdminSeeder`
 
-### database/seeders/DummyDataSeeder.php
+### database/seeders/DummyDataSeeder.php (rewritten 2026-08-24, split)
 
-Runs everything inside a DB transaction for consistency.
+Runs everything inside a DB transaction for consistency. Now creates **Proposals** first, then
+instantiates a subset of them into **Projects** via `createProposalsAndProjects()` (renamed from
+the old `createProjects()`), rather than creating flat `Project` rows directly.
 
 - **Departments (3):**
   - Software Engineering (code: SW)
@@ -1035,7 +1380,17 @@ Runs everything inside a DB transaction for consistency.
   - NET: 3 (Dr./Prof. titles, Arabic names)
   - ELEC: 2 (Dr./Prof. titles, Arabic names)
 
-- **Projects (25 total):** Various statuses (1=archived, 2=proposal_submitted, 5=in_progress, 6=ready_for_defense); 2-4 students per project; scored projects get 2 assigned examiners + 2 evaluations; 3 projects have based_on_project_id set (evolution chains)
+- **Proposals + Projects (`createProposalsAndProjects()`):** 25 `Proposal` rows created (2-4
+  students each via `ProposalStudent`); 21 of them are seeded مؤرشف (`status=1` in the method's
+  internal `$projectDefs` list) and immediately get `$proposal->instantiateProject($manager)`
+  called on them, producing 21 `Project` rows; the remaining 4 stay مقترح (`status=2`) with no
+  linked `Project` at all. Of the 21 instantiated projects, those with a non-null `score` in
+  `$projectDefs` (most of them) get 2 assigned examiners (rotated through department examiner
+  pairs) + 2 `Evaluation` rows, then `final_score` set and `status_id` flipped to
+  `Project::STATUS_ARCHIVED`; every instantiated project also gets its `visit_count` set from
+  `$projectDefs`. 3 proposals have `based_on_project_id` set, pointing at a previously-instantiated
+  `Project`'s id (evolution chains — decision: `based_on_project_id` always points at `projects.id`,
+  never another proposal's id).
 
 - **Command:** `php artisan db:seed --class=DummyDataSeeder`
 
@@ -1094,7 +1449,7 @@ Base test case extending Laravel's base TestCase.
 ### tests/Feature/Auth/RBACTest.php
 
 - **Purpose:** Tests role-based access control for key routes
-- **9 test methods:**
+- **9 test methods** (updated 2026-08-24, split):
   - Unauthenticated user redirected to /login from /dashboard
   - super_admin can access dashboard
   - super_admin can access admin panel (/admin)
@@ -1102,32 +1457,57 @@ Base test case extending Laravel's base TestCase.
   - dept_manager cannot access admin panel (403)
   - dept_manager can access /departments
   - viewer cannot access /departments (403)
-  - dept_staff can access /projects/create
-  - viewer cannot access /projects/create (403)
+  - dept_staff can access `route('proposals.create')` (renamed from `/projects/create`, which no
+    longer exists — the test file's own comment notes that hitting the literal old URL now matches
+    the thin `GET projects/{id}` route with `$id = 'create'` and errors, since project creation
+    lives on proposals now)
+  - viewer cannot access `route('proposals.create')` (403)
 - **Run:** `php artisan test tests/Feature/Auth/RBACTest.php`
 
 ### tests/Feature/Roles/RoleVerificationTest.php
 
-- **Purpose:** Comprehensive RBAC verification across all 5 roles
+- **Purpose:** Comprehensive RBAC verification across all 5 roles — internally rewritten to drive
+  `Proposal` (confirmed via source: 8 `Proposal::` references, 0 `Project::` references), same test
+  count/shape as before the split
 - **58 test methods, 80 assertions:**
-  - super_admin (15 tests): full system access, can delete empty dept, blocked on dept with projects
-  - dept_manager (15 tests): cannot create/delete depts, can update own dept, blocked on others dept, project lifecycle, examiners, score, cannot import
+  - super_admin (15 tests): full system access, can delete empty dept, blocked on dept with proposals
+  - dept_manager (15 tests): cannot create/delete depts, can update own dept, blocked on others dept, proposal lifecycle, examiners, score, cannot import
   - supervisor (11 tests): read-only on projects/dashboard, all write operations return 403
-  - dept_staff (13 tests): create/edit pending projects in own dept, blocked cross-dept, blocked post-approval
+  - dept_staff (13 tests): create/edit pending proposals in own dept, blocked cross-dept, blocked post-instantiate
   - viewer (6 tests): dashboard only, all manage/report/write routes return 403
 - **Run:** `php artisan test tests/Feature/Roles/RoleVerificationTest.php`
 
 ### tests/Feature/DashboardTest.php
 
-- Tests dashboard accessibility for authenticated users
+- Tests dashboard accessibility for authenticated users (~2 tests)
 
 ### tests/Feature/Models/UserModelTest.php
 
-- Tests User model: fillable fields, casts, relationships (~5 tests)
+- Tests User model: fillable fields, casts, relationships (~4 tests)
 
-### tests/Feature/Models/ProjectModelTest.php
+### tests/Feature/Models/ProjectModelTest.php (narrowed 2026-08-24, split)
 
-- Tests Project model: fillable fields, relationships (~5 tests)
+- **1 test:** `project supervisor and students are read by reference through the proposal` —
+  instantiates a Proposal into a Project, eager-loads `proposal.supervisor`/`proposal.students`,
+  and asserts the `$appends` accessors proxy the values correctly. The old fillable/relationship
+  assertions for the flat model no longer apply — `Project`'s own fillable/relationships are now
+  covered inline by other files (InstantiateProjectTest, ProjectTest) rather than a dedicated
+  fillable-fields test.
+- **Run:** `php artisan test tests/Feature/Models/ProjectModelTest.php`
+
+### tests/Feature/Models/ProposalModelTest.php (new, 2026-08-24 split)
+
+- **Purpose:** `Proposal`'s permission methods and `instantiateProject()`
+- **7 test methods:**
+  - `canBeModifiedBy()` true for dept_manager of the same department while مقترح
+  - `canBeModifiedBy()` false once مؤرشف, even for the creator
+  - super_admin can modify regardless of status or department
+  - `canBeInstantiatedBy()` mirrors `canBeArchivedBy()`: dept_manager of dept, مقترح only
+  - `instantiateProject()` creates exactly one Project row and flips the proposal's status
+  - `instantiateProject()` rolls back the status flip if Project creation fails (forces a
+    unique-constraint collision on `proposal_id` to prove the `DB::transaction()` is atomic)
+  - A مؤرشف proposal cannot be instantiated again
+- **Run:** `php artisan test tests/Feature/Models/ProposalModelTest.php`
 
 ### tests/Feature/Seeders/RoleSeederTest.php
 
@@ -1135,39 +1515,92 @@ Base test case extending Laravel's base TestCase.
 
 ### tests/Feature/Seeders/ProjectStatusSeederTest.php
 
-- Verifies all 10 project statuses exist after seeding
+- Verifies exactly 2 project statuses exist after seeding (updated to match the 2-row seed —
+  the "10 project statuses" this section previously stated was already stale before the split,
+  left over from the pre-2026-08-17 scope-down; fixed here as an incidental accuracy correction)
+- **3 test methods:** exactly 2 statuses exist; مؤرشف is id 1 and active; مقترح is id 2 and active
+- **Run:** `php artisan test tests/Feature/Seeders/ProjectStatusSeederTest.php`
+
+### tests/Feature/Seeders/ProjectLifecycleStatusSeederTest.php (new, 2026-08-24 split)
+
+- **2 test methods:** exactly 2 project lifecycle statuses exist; قيد التنفيذ is id 1 and مؤرشف is id 2
+- **Run:** `php artisan test tests/Feature/Seeders/ProjectLifecycleStatusSeederTest.php`
 
 ### tests/Feature/Department/DepartmentTest.php
 
 - **Purpose:** Department CRUD, access control, validation, specialization management
-- **14 test methods** covering super_admin full CRUD, dept_manager read/update own dept only, dept_staff blocked, spec create/update/destroy, project-link guard on delete
+- **14 test methods** covering super_admin full CRUD, dept_manager read/update own dept only, dept_staff blocked, spec create/update/destroy, proposal-link guard on delete (the link-guard fixture now creates a `Proposal`, not a `Project`)
 - **Run:** `php artisan test tests/Feature/Department/DepartmentTest.php`
 
-### tests/Feature/Project/ProjectTest.php
+### tests/Feature/Project/ProjectTest.php (narrowed 2026-08-24, split)
 
-- **Purpose:** Full project lifecycle: create, store with status, approve, soft delete, visit count, search/filter, similarity detection
-- **14 test methods:**
-  - super_admin can view all projects
-  - dept_manager creates project (status=archived)
-  - dept_staff creates project (status=proposal_submitted)
-  - dept_staff cannot create project in other dept (403)
-  - Non-PDF file rejected (validation error)
-  - PDF > 15MB rejected (validation error)
-  - dept_manager can approve pending project
-  - dept_staff cannot approve project (403)
-  - dept_manager can soft delete project (is_deleted=true)
-  - dept_staff cannot delete project (403)
-  - Visit count increments on each show() call
-  - Search by title returns only matching projects
-  - Filter by department returns only that dept's projects
-  - Filter by academic year returns correct projects
-  - Duplicate title projects both appear in search
+- **Purpose:** Under the split, `ProjectController` is thin — index/show only. All the old create/
+  replace/delete/archive/search-filter assertions that used to live here moved: create/replace/
+  delete ownership matrix → `Proposal/ProposalTest.php`; instantiate (the old "archive" action) →
+  `Project/InstantiateProjectTest.php`; examiner/evaluation/final-score → `Examiner/ExaminerTest.php`;
+  search/filter → `Search/SearchTest.php` (now against `proposals.index`). What survives here is
+  what's still true about the thin Project surface itself.
+- **3 test methods:**
+  - super_admin can view all projects (via `makeThinProject()` helper: creates a مؤرشف Proposal,
+    instantiates it)
+  - Project visit count increments on each `projects.show` call
+  - `projects.index` never renders a status other than قيد التنفيذ or مؤرشف
 - **Run:** `php artisan test tests/Feature/Project/ProjectTest.php`
+
+### tests/Feature/Proposal/ProposalTest.php (new, 2026-08-24 split)
+
+- **Purpose:** Proposal create + the full replace/delete ownership matrix — ported from the
+  pre-split `ProjectTest.php`'s ownership assertions, now applied to `Proposal`
+- **10 test methods:**
+  - dept_staff can create a proposal in their own department
+  - Creation never auto-archives for any role (only `instantiate()` ever flips مقترح→مؤرشف — a
+    behavior change from the old conflated model, where a manager's create went straight to مؤرشف)
+  - Creator can replace their own pending proposal details
+  - Non-creator dept_staff cannot replace another staff member's pending proposal
+  - dept_manager cannot replace an archived (مؤرشف) proposal
+  - super_admin can replace an archived (مؤرشف) proposal
+  - dept_manager cannot move a proposal to a different department via replace (403)
+  - super_admin can move a proposal to a different department via replace
+  - Creator can delete their own pending proposal
+  - dept_manager cannot delete an archived (مؤرشف) proposal
+- **Run:** `php artisan test tests/Feature/Proposal/ProposalTest.php`
+
+### tests/Feature/Project/InstantiateProjectTest.php (new, 2026-08-24 split)
+
+- **Purpose:** `proposals.instantiate` — the old "archive" action, now the atomic instantiate step
+- **5 test methods:**
+  - dept_manager of the same department can instantiate and gets redirected to the project show page
+  - dept_manager of a different department gets 403
+  - super_admin can instantiate regardless of department
+  - An already-مؤرشف proposal cannot be instantiated again (double-click guard)
+  - dept_staff cannot instantiate
+- **Run:** `php artisan test tests/Feature/Project/InstantiateProjectTest.php`
+
+### tests/Feature/Project/ProjectExploitPreventionTest.php (new, 2026-08-24 split)
+
+- **Purpose:** Proves the structural fix found in the pre-migration audit — examiners/evaluations
+  can only ever attach to an instantiated `Project`, never reachable via a proposal-only id, since
+  `projects`/`proposals` are now separate tables with independent auto-increment sequences
+- **2 test methods:**
+  - Assigning an examiner to a never-instantiated proposal's id 404s (no project row exists there)
+  - `evaluations` table has no row whose `project_id` fails to resolve to an instantiated project
+- **Run:** `php artisan test tests/Feature/Project/ProjectExploitPreventionTest.php`
+
+### tests/Feature/Console/MigrateProposalProjectDataTest.php (new, 2026-08-24 split)
+
+- **Purpose:** `php artisan proposals:migrate-legacy-data` (`app/Console/Commands/MigrateProposalProjectData.php`) — the one-time command that migrated the pre-split flat `projects` table into `proposals` + `projects`
+- **5 test methods** (against a seeded `projects_legacy` fixture table):
+  - Migrates a graded مؤرشف row into a proposal plus an instantiated, graded project (with examiners/evaluations carried over)
+  - Migrates an ungraded مؤرشف row into a قيد التنفيذ project with no examiners
+  - A مقترح row with no examiners stays proposal-only
+  - Cleans erroneous grading data from a مقترح row before migrating it (the exact id=1 data-integrity bug found in the pre-migration audit — see CLAUDE.md)
+  - Re-points `based_on_project_id` chains at the new project ids
+- **Run:** `php artisan test tests/Feature/Console/MigrateProposalProjectDataTest.php`
 
 ### tests/Feature/Search/SearchTest.php
 
-- **Purpose:** SearchService and SearchController functionality
-- **15 test methods, 150 assertions** covering search by title, description, case insensitivity, all individual filters, combined filters, empty search, pagination, similarity detection (finds matches, ignores current project on edit), suggestions max 5, suggestions match only, unauthenticated blocked
+- **Purpose:** SearchService and SearchController functionality — now exercises `Proposal` directly (`Proposal::factory()` fixtures throughout, confirmed via source)
+- **15 test methods, 150 assertions** covering search by title, description, case insensitivity, all individual filters, combined filters, empty search, pagination, similarity detection (finds matches, ignores current proposal on edit), suggestions max 5, suggestions match only, unauthenticated blocked
 - **Run:** `php artisan test tests/Feature/Search/SearchTest.php`
 
 ### tests/Feature/Examiner/ExaminerTest.php
@@ -1185,22 +1618,29 @@ Base test case extending Laravel's base TestCase.
 
 ### tests/Feature/Import/ImportTest.php
 
-- **Purpose:** Bulk import controller and import logic
+- **Purpose:** Bulk import controller and import logic — fixture-building now goes through
+  `app/Imports/ProjectsImport.php`'s rewritten row logic (creates a `Proposal`, then
+  `instantiateProject()`s it — see Section 4's ImportController entry and Section 6). Note:
+  `uploadPdfs()` (the ZIP-matching step) is **not** exercised by this file at all — see the
+  accuracy flag on `ImportController::uploadPdfs()` in Section 4 for a latent bug this leaves
+  uncovered.
 - **15 test methods, 52 assertions:**
   - Access: super_admin allowed, dept_manager gets 403
   - Template download returns XLSX
   - Non-excel file rejected; file > 5MB rejected
-  - Valid Excel row creates project with archived status
+  - Valid Excel row creates a proposal + instantiated project with archived status
   - Per-row isolation: bad dept_code/spec/supervisor/missing title fails only that row
   - Students created correctly; empty student slots skipped
   - Summary counts are correct
-  - dryRun:true touches 0 DB rows; dryRun:false writes 1 project
+  - dryRun:true touches 0 DB rows; dryRun:false writes 1 proposal + 1 project
 - **Note:** 10 failures occur in XAMPP environment (ext-zip disabled)
 - **Run:** `php artisan test tests/Feature/Import/ImportTest.php`
 
 ### tests/Feature/Report/ReportTest.php
 
-- **Purpose:** ReportController and ReportService
+- **Purpose:** ReportController and ReportService — fixture-building now goes through
+  `Proposal::factory()->create()->instantiateProject($actor)` rather than `Project::factory()`
+  directly (see `makeReportProject()`/`makeReportProjects()` helpers in the test file)
 - **13 test methods, 138 assertions:**
   - Dashboard stats by role (super_admin, dept_manager, dept_staff)
   - dept_manager forced to own dept in departmentReport
@@ -1230,7 +1670,8 @@ Base test case extending Laravel's base TestCase.
 
 ### tests/Feature/Public/PublicBrowseTest.php
 
-- **Purpose:** Public browse and show pages, auth redirect tests
+- **Purpose:** Public browse and show pages, auth redirect tests — fixtures now build a Proposal
+  then instantiate it into an archived Project (the entity these public pages actually query)
 - **14 test methods:**
   - Landing page (/) loads
   - Browse page (/browse) loads
@@ -1247,13 +1688,18 @@ Base test case extending Laravel's base TestCase.
 
 ### tests/Feature/Settings/ProfileUpdateTest.php
 
-- Profile update validation and success (~3 tests)
+- Profile update validation and success (~5 tests)
 
 ### tests/Feature/Settings/PasswordUpdateTest.php
 
-- Password update flow (~3 tests)
+- Password update flow (~2 tests)
 
-**Total test suite: 208 passing / 218 total (10 Import failures due to ext-zip disabled in XAMPP)**
+**Total test suite (as of 2026-08-24): 232 passing / 232 total, 823 assertions, 0 failures.**
+This figure is a point-in-time snapshot per the Proposal/Project split's own completion report
+(`.superpowers/sdd/2026-08-24-proposal-project-split/`) — re-run the suite for the current count
+rather than treating this number as permanent. The previously-noted 10 Import/ext-zip failures
+(XAMPP-specific, `ext-zip` disabled) are not reproducing as of this writing; see Section 1's Major
+Changes / Bugfixes entries for the change history that led here.
 
 **Run all tests:** `php artisan test`
 
@@ -1296,9 +1742,12 @@ Base test case extending Laravel's base TestCase.
 - StoreProjectRequest and UpdateProjectRequest with PDF validation (mime:pdf, max 15MB)
 - ProjectController: 8 methods
 - Status auto-assignment: dept_manager/super_admin -> archived; dept_staff -> proposal_submitted
-- approve() endpoint changes status to archived
+- archive() endpoint changes status to archived — now guarded to dept_manager of that project's department while pending (مقترح), or super_admin (see `Project::canBeArchivedBy()`)
 - Soft delete via is_deleted=true (not deleted_at)
-- PDF stored in storage/public/projects; ProjectDocument record created on upload
+- PDF stored in storage/public/projects; ProjectDocument record created on upload (historical —
+  this was the original `ProjectController`, since fully rebuilt by the 2026-08-24 split; the
+  current `ProposalController` stores the PDF path directly on `draft_file_path` and never creates
+  a `ProjectDocument` record — see Section 3/4)
 - authorizeEdit() private method enforces role/dept/status rules
 - Projects/Index.vue: paginated table, status badges, role-based actions, similarity warning
 - Projects/Create.vue: dynamic student rows, cascaded dept->spec, PDF upload with progress
@@ -1379,7 +1828,11 @@ Base test case extending Laravel's base TestCase.
 2. **Full 11-stage project lifecycle** — 10 statuses exist in DB but only 2 are actively used (proposal_submitted and archived); the other 8 (supervisor_approved, hod_approved, in_progress, ready_for_defense, under_defense, revisions_required, rejected, cancelled) have no UI transitions or business logic
 3. **Supervisor approval gates** — supervisor role is currently read-only; has no action routes of any kind
 4. **Defense scheduling** — no `defense` table; no scheduling UI
-5. **Document milestone tracking** — `project_documents` table exists and records are created on upload; but there is no UI for browsing a project's document history or associating documents to specific lifecycle milestones
+5. **Document milestone tracking** — the `project_documents` table and `ProjectDocument` model were
+   dropped entirely by the 2026-08-24 proposal/project split (confirmed empty, 0 rows, at drop
+   time); no milestone document tracking exists in any form today, not even the original
+   upload-only version — a PDF is now just `draft_file_path` on `Proposal`, with no separate
+   document history record at all
 6. **Status history logging** — no `status_history` table; no audit trail of status changes over time
 
 ### Additional Gaps Observed
@@ -1598,10 +2051,11 @@ graduation-archive/
 |   |   |-- Evaluation.php
 |   |   |-- Examiner.php
 |   |   |-- Project.php
-|   |   |-- ProjectDocument.php
 |   |   |-- ProjectExaminer.php
+|   |   |-- ProjectLifecycleStatus.php
 |   |   |-- ProjectStatus.php
-|   |   |-- ProjectStudent.php
+|   |   |-- Proposal.php
+|   |   |-- ProposalStudent.php
 |   |   |-- Specialization.php
 |   |   |-- User.php
 |   |-- Services/

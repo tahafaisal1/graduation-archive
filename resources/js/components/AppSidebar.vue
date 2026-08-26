@@ -4,7 +4,7 @@ import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/vue3';
-import { BarChart2, BookOpen, Building2, FolderOpen, LayoutGrid, Search, Upload, UserCheck, Users } from 'lucide-vue-next';
+import { BarChart2, BookOpen, Building2, FileText, FolderOpen, LayoutGrid, Search, Upload, UserCheck, Users } from 'lucide-vue-next';
 import { computed } from 'vue';
 import Logo from './Brand/Logo.vue';
 
@@ -18,6 +18,7 @@ const navByRole = computed(() => {
                 { title: 'لوحة التحكم', href: '/dashboard', icon: LayoutGrid },
                 { title: 'الأقسام', href: '/departments', icon: Building2 },
                 { title: 'المستخدمون', href: '/admin/users', icon: Users },
+                { title: 'المقترحات', href: '/proposals', icon: FileText },
                 { title: 'المشاريع', href: '/projects', icon: FolderOpen },
                 { title: 'الممتحنون', href: '/examiners', icon: UserCheck },
                 { title: 'البحث', href: '/search', icon: Search },
@@ -28,6 +29,7 @@ const navByRole = computed(() => {
         case 'dept_manager':
             return [
                 { title: 'لوحة التحكم', href: '/dashboard', icon: LayoutGrid },
+                { title: 'المقترحات', href: '/proposals', icon: FileText },
                 { title: 'المشاريع', href: '/projects', icon: FolderOpen },
                 { title: 'الأقسام', href: '/departments', icon: Building2 },
                 { title: 'الممتحنون', href: '/examiners', icon: UserCheck },
@@ -38,6 +40,7 @@ const navByRole = computed(() => {
         case 'dept_staff':
             return [
                 { title: 'لوحة التحكم', href: '/dashboard', icon: LayoutGrid },
+                { title: 'المقترحات', href: '/proposals', icon: FileText },
                 { title: 'المشاريع', href: '/projects', icon: FolderOpen },
                 { title: 'البحث', href: '/search', icon: Search },
                 { title: 'تصفح المشاريع', href: '/browse', icon: BookOpen },

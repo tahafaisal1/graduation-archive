@@ -25,6 +25,9 @@ test('user belongs to department relationship exists', function () {
     expect((new User())->department())->toBeInstanceOf(BelongsTo::class);
 });
 
-test('user has supervised projects relationship exists', function () {
-    expect((new User())->supervisedProjects())->toBeInstanceOf(HasMany::class);
+test('user has supervised proposals relationship exists', function () {
+    // Renamed from supervisedProjects() in Task 4 (commit 03459d9) — it now
+    // returns supervised Proposal rows, not Project rows, since a project has
+    // no independent supervisor field and reads through its proposal instead.
+    expect((new User())->supervisedProposals())->toBeInstanceOf(HasMany::class);
 });

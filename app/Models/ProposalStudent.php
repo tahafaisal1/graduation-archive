@@ -5,10 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class ProjectStudent extends Model
+class ProposalStudent extends Model
 {
     protected $fillable = [
-        'project_id',
+        'proposal_id',
         'full_name',
         'registration_number',
         'status',
@@ -22,8 +22,8 @@ class ProjectStudent extends Model
         ];
     }
 
-    public function project(): BelongsTo
+    public function proposal(): BelongsTo
     {
-        return $this->belongsTo(Project::class);
+        return $this->belongsTo(Proposal::class);
     }
 }

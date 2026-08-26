@@ -42,8 +42,8 @@ class User extends Authenticatable
         return $this->belongsTo(Department::class);
     }
 
-    public function supervisedProjects(): HasMany
+    public function supervisedProposals(): HasMany
     {
-        return $this->hasMany(Project::class, 'supervisor_id');
+        return $this->hasMany(Proposal::class, 'supervisor_id');
     }
 }

@@ -7,10 +7,24 @@ import { computed, watch } from 'vue';
 interface Department    { id: number; name: string }
 interface Specialization { id: number; name: string; department_id: number }
 interface Supervisor    { id: number; name: string }
+interface ProposalStudent { id: number; full_name: string; registration_number: string }
+
+interface Proposal {
+    id: number;
+    title: string;
+    description: string;
+    academic_year: string;
+    department_id: number;
+    specialization_id: number;
+    supervisor_id: number;
+    draft_file_path: string | null;
+    students: ProposalStudent[];
+}
 
 interface Student { full_name: string; registration_number: string }
 
 const props = defineProps<{
+    proposal:        Proposal;
     departments:     Department[];
     specializations: Specialization[];
     supervisors:     Supervisor[];
@@ -18,19 +32,22 @@ const props = defineProps<{
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'لوحة التحكم', href: '/dashboard' },
-    { title: 'المشاريع',    href: '/projects' },
-    { title: 'إضافة مشروع', href: '/projects/create' },
+    { title: 'المقترحات',    href: '/proposals' },
+    { title: 'تعديل المقترح', href: '#' },
 ];
 
 const form = useForm({
-    project_title:     '',
-    description:       '',
-    academic_year:     '',
-    department_id:     null as number | null,
-    specialization_id: null as number | null,
-    supervisor_id:     null as number | null,
+    title:              props.proposal.title,
+    description:       props.proposal.description,
+    academic_year:     props.proposal.academic_year,
+    department_id:     props.proposal.department_id as number | null,
+    specialization_id: props.proposal.specialization_id as number | null,
+    supervisor_id:     props.proposal.supervisor_id as number | null,
     pdf_file:          null as File | null,
-    students:          [{ full_name: '', registration_number: '' }] as Student[],
+    students:          props.proposal.students.map(s => ({
+        full_name:           s.full_name,
+        registration_number: s.registration_number,
+    })) as Student[],
 });
 
 const filteredSpecializations = computed(() =>
@@ -39,7 +56,9 @@ const filteredSpecializations = computed(() =>
         : []
 );
 
-watch(() => form.department_id, () => { form.specialization_id = null; });
+watch(() => form.department_id, (newVal, oldVal) => {
+    if (oldVal !== null && newVal !== oldVal) form.specialization_id = null;
+});
 
 function addStudent() {
     form.students.push({ full_name: '', registration_number: '' });
@@ -54,15 +73,20 @@ function onFileChange(e: Event) {
 }
 
 function submit() {
-    form.post(route('projects.store'), { forceFormData: true });
+    form.put(route('proposals.update', [props.proposal.id]), { forceFormData: true });
 }
+
+const currentFileName = computed(() => {
+    if (!props.proposal.draft_file_path) return null;
+    return props.proposal.draft_file_path.split('/').pop() ?? null;
+});
 </script>
 
 <template>
-    <Head title="إضافة مشروع" />
+    <Head title="تعديل المقترح" />
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-6 p-4" dir="rtl">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">إضافة مشروع جديد</h1>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">تعديل المقترح</h1>
 
             <div class="max-w-3xl rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
                 <form @submit.prevent="submit" class="space-y-6">
@@ -70,16 +94,16 @@ function submit() {
                     <!-- Title -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                            عنوان المشروع <span class="text-red-500">*</span>
+                            عنوان المقترح <span class="text-red-500">*</span>
                         </label>
                         <input
-                            v-model="form.project_title"
+                            v-model="form.title"
                             type="text"
                             maxlength="255"
                             class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                            :class="{ 'border-red-500': form.errors.project_title }"
+                            :class="{ 'border-red-500': form.errors.title }"
                         />
-                        <p v-if="form.errors.project_title" class="mt-1 text-xs text-red-600">{{ form.errors.project_title }}</p>
+                        <p v-if="form.errors.title" class="mt-1 text-xs text-red-600">{{ form.errors.title }}</p>
                     </div>
 
                     <!-- Description -->
@@ -105,7 +129,6 @@ function submit() {
                             v-model="form.academic_year"
                             type="text"
                             maxlength="20"
-                            placeholder="مثال: 2024-2025"
                             class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                             :class="{ 'border-red-500': form.errors.academic_year }"
                         />
@@ -228,16 +251,41 @@ function submit() {
                     <!-- PDF Upload -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                            ملف المشروع (PDF)
+                            ملف المقترح (PDF)
                         </label>
-                        <input
-                            type="file"
-                            accept=".pdf"
-                            class="mt-1 block w-full text-sm text-gray-600 file:ml-3 file:mr-0 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100 dark:text-gray-400 dark:file:bg-blue-900/20 dark:file:text-blue-400"
-                            @change="onFileChange"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">PDF فقط — الحجم الأقصى 15 ميجابايت</p>
+
+                        <!-- Current file -->
+                        <div
+                            v-if="currentFileName && !form.pdf_file"
+                            class="mt-1 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-700/50"
+                        >
+                            <span class="text-lg">📄</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="truncate text-sm text-gray-700 dark:text-gray-300">{{ currentFileName }}</p>
+                                <p class="text-xs text-gray-500">الملف الحالي</p>
+                            </div>
+                            <a
+                                :href="`/storage/${proposal.draft_file_path}`"
+                                target="_blank"
+                                class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                                تنزيل
+                            </a>
+                        </div>
+
+                        <div class="mt-2">
+                            <input
+                                type="file"
+                                accept=".pdf"
+                                class="block w-full text-sm text-gray-600 file:ml-3 file:mr-0 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100 dark:text-gray-400 dark:file:bg-blue-900/20 dark:file:text-blue-400"
+                                @change="onFileChange"
+                            />
+                            <p class="mt-1 text-xs text-gray-500">
+                                {{ currentFileName ? 'اختر ملفاً جديداً لاستبدال الحالي —' : '' }} PDF فقط، الحجم الأقصى 15 ميجابايت
+                            </p>
+                        </div>
                         <p v-if="form.errors.pdf_file" class="mt-1 text-xs text-red-600">{{ form.errors.pdf_file }}</p>
+
                         <!-- Upload progress -->
                         <div v-if="form.progress" class="mt-2">
                             <div class="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
@@ -257,10 +305,10 @@ function submit() {
                             :disabled="form.processing"
                             class="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                         >
-                            {{ form.processing ? 'جاري الحفظ...' : 'حفظ المشروع' }}
+                            {{ form.processing ? 'جاري الحفظ...' : 'تحديث المقترح' }}
                         </button>
                         <a
-                            :href="route('projects.index')"
+                            :href="route('proposals.show', [proposal.id])"
                             class="rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                         >
                             إلغاء

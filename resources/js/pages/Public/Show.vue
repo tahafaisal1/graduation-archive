@@ -5,32 +5,40 @@ import Logo from '@/components/Brand/Logo.vue';
 interface Department { id: number; name: string; }
 interface Specialization { id: number; name: string; }
 interface Student { id: number; full_name: string; registration_number: string; }
-interface Document { id: number; document_type: string; file_path: string; is_final: boolean; }
 interface Examiner { id: number; full_name: string; title: string | null; }
 interface Evaluation { id: number; examiner_id: number; notes: string | null; }
-interface RelatedProject {
-    id: number;
-    project_title: string;
+
+interface RelatedProposal {
+    title: string;
     academic_year: string;
     department: Department | null;
     specialization: Specialization | null;
+}
+
+interface RelatedProject {
+    id: number;
+    proposal: RelatedProposal;
     supervisor: { name: string } | null;
     students: Student[];
 }
 
-interface Project {
-    id: number;
-    project_title: string;
+interface Proposal {
+    title: string;
     description: string | null;
     academic_year: string;
     draft_file_path: string | null;
-    final_score: string | null;
-    visit_count: number;
     department: Department | null;
     specialization: Specialization | null;
+}
+
+interface Project {
+    id: number;
+    final_score: string | null;
+    final_file_path: string | null;
+    visit_count: number;
+    proposal: Proposal;
     supervisor: { id: number; name: string } | null;
     students: Student[];
-    documents: Document[];
     examiners: Examiner[];
     evaluations: Evaluation[];
 }
@@ -42,7 +50,7 @@ defineProps<{
 </script>
 
 <template>
-    <Head :title="project.project_title + ' — كلية التقنية الإلكترونية'" />
+    <Head :title="project.proposal.title + ' — كلية التقنية الإلكترونية'" />
 
     <div class="min-h-screen bg-background font-body text-text-dark" dir="rtl">
 
@@ -77,7 +85,7 @@ defineProps<{
             <div class="bg-surface border border-border rounded-xl p-6 mb-6">
                 <div class="flex flex-wrap items-start justify-between gap-4 mb-2">
                     <h1 class="font-display font-bold text-2xl text-text-dark leading-snug flex-1">
-                        {{ project.project_title }}
+                        {{ project.proposal.title }}
                     </h1>
                     <div class="flex items-center gap-3 shrink-0">
                         <span class="inline-block bg-green-100 text-green-700 text-xs px-3 py-1 rounded-full font-medium">مؤرشف</span>
@@ -92,15 +100,15 @@ defineProps<{
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 mt-4 text-sm">
                     <div class="flex gap-2">
                         <span class="text-text-muted w-32 shrink-0">القسم:</span>
-                        <span class="text-text-dark font-medium">{{ project.department?.name ?? '—' }}</span>
+                        <span class="text-text-dark font-medium">{{ project.proposal.department?.name ?? '—' }}</span>
                     </div>
                     <div class="flex gap-2">
                         <span class="text-text-muted w-32 shrink-0">التخصص:</span>
-                        <span class="text-text-dark font-medium">{{ project.specialization?.name ?? '—' }}</span>
+                        <span class="text-text-dark font-medium">{{ project.proposal.specialization?.name ?? '—' }}</span>
                     </div>
                     <div class="flex gap-2">
                         <span class="text-text-muted w-32 shrink-0">السنة الدراسية:</span>
-                        <span class="text-text-dark font-medium">{{ project.academic_year }}</span>
+                        <span class="text-text-dark font-medium">{{ project.proposal.academic_year }}</span>
                     </div>
                     <div class="flex gap-2">
                         <span class="text-text-muted w-32 shrink-0">المشرف:</span>
@@ -139,16 +147,16 @@ defineProps<{
             </div>
 
             <!-- DESCRIPTION SECTION -->
-            <div v-if="project.description" class="bg-surface border border-border rounded-xl p-6 mb-6">
+            <div v-if="project.proposal.description" class="bg-surface border border-border rounded-xl p-6 mb-6">
                 <h2 class="font-display font-bold text-lg text-text-dark mb-3">وصف المشروع</h2>
-                <p class="text-sm text-text-dark leading-relaxed whitespace-pre-line">{{ project.description }}</p>
+                <p class="text-sm text-text-dark leading-relaxed whitespace-pre-line">{{ project.proposal.description }}</p>
             </div>
 
             <!-- PDF SECTION -->
-            <div v-if="project.draft_file_path" class="bg-surface border border-border rounded-xl p-6 mb-6">
+            <div v-if="project.final_file_path || project.proposal.draft_file_path" class="bg-surface border border-border rounded-xl p-6 mb-6">
                 <h2 class="font-display font-bold text-lg text-text-dark mb-3">ملف المشروع</h2>
                 <a
-                    :href="'/storage/' + project.draft_file_path"
+                    :href="'/storage/' + (project.final_file_path || project.proposal.draft_file_path)"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark transition-colors"
@@ -168,18 +176,18 @@ defineProps<{
                         class="bg-surface border border-border rounded-xl p-5 hover:border-primary/40 hover:shadow-md transition-all duration-200 flex flex-col"
                     >
                         <h3 class="font-display font-bold text-base text-text-dark mb-3 line-clamp-2 leading-snug">
-                            {{ rel.project_title }}
+                            {{ rel.proposal.title }}
                         </h3>
                         <div class="flex flex-wrap gap-2 mb-3">
                             <span class="inline-block bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full font-medium">
-                                {{ rel.department?.name ?? '—' }}
+                                {{ rel.proposal.department?.name ?? '—' }}
                             </span>
                             <span class="inline-block bg-primary-light/15 text-primary-dark text-xs px-2 py-0.5 rounded-full font-medium">
-                                {{ rel.specialization?.name ?? '—' }}
+                                {{ rel.proposal.specialization?.name ?? '—' }}
                             </span>
                         </div>
                         <div class="text-xs text-text-muted space-y-1 mb-4 flex-1">
-                            <p>السنة الدراسية: <span class="text-text-dark font-medium">{{ rel.academic_year }}</span></p>
+                            <p>السنة الدراسية: <span class="text-text-dark font-medium">{{ rel.proposal.academic_year }}</span></p>
                             <p>المشرف: <span class="text-text-dark font-medium">{{ rel.supervisor?.name ?? '—' }}</span></p>
                             <p>عدد الطلبة: <span class="text-text-dark font-medium">{{ rel.students.length }}</span></p>
                         </div>

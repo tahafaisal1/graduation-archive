@@ -36,7 +36,7 @@ const emit = defineEmits<{
                     >
                         <span class="text-yellow-600 dark:text-yellow-500">•</span>
                         <a
-                            :href="route('projects.show', [p.id])"
+                            :href="route('proposals.show', [p.id])"
                             class="font-medium text-blue-600 hover:underline dark:text-blue-400"
                         >
                             {{ p.project_title }}

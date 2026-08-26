@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\Department;
-use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
 use App\Services\SearchService;
@@ -18,7 +18,10 @@ beforeEach(function () {
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 /**
- * Creates a project with all required FK deps.
+ * Creates a proposal with all required FK deps. This search/filter surface
+ * (proposals.index + search.index/search.suggestions) is powered by
+ * SearchService::searchProposals(), which queries the `proposals` table
+ * directly — no instantiated Project is needed for any of these tests.
  * Omit $dept / $spec / $supervisor to have fresh ones auto-created.
  */
 function makeSearchProject(
@@ -26,12 +29,12 @@ function makeSearchProject(
     ?Specialization $spec = null,
     ?User $supervisor = null,
     array $overrides = [],
-): Project {
+): Proposal {
     $dept       ??= Department::factory()->create();
     $spec       ??= Specialization::factory()->create(['department_id' => $dept->id]);
     $supervisor ??= userWithRole('supervisor');
 
-    return Project::factory()->create(array_merge([
+    return Proposal::factory()->create(array_merge([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $supervisor->id,
@@ -41,16 +44,16 @@ function makeSearchProject(
 // ── 1. Search by title ────────────────────────────────────────────────────────
 
 test('search by title returns correct projects', function () {
-    makeSearchProject(overrides: ['project_title' => 'Alpha Robot Controller']);
-    makeSearchProject(overrides: ['project_title' => 'Beta Database System']);
+    makeSearchProject(overrides: ['title' => 'Alpha Robot Controller']);
+    makeSearchProject(overrides: ['title' => 'Beta Database System']);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['search' => 'Alpha Robot']))
+        ->get(route('proposals.index', ['search' => 'Alpha Robot']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('Projects/Index')
-            ->has('projects.data', 1)
-            ->where('projects.data.0.project_title', 'Alpha Robot Controller')
+            ->component('Proposals/Index')
+            ->has('proposals.data', 1)
+            ->where('proposals.data.0.title', 'Alpha Robot Controller')
         );
 });
 
@@ -58,34 +61,34 @@ test('search by title returns correct projects', function () {
 
 test('search by description returns correct projects', function () {
     makeSearchProject(overrides: [
-        'project_title' => 'Generic Title One',
-        'description'   => 'Uses xylophone resonance for signal analysis',
+        'title'       => 'Generic Title One',
+        'description' => 'Uses xylophone resonance for signal analysis',
     ]);
     makeSearchProject(overrides: [
-        'project_title' => 'Generic Title Two',
-        'description'   => 'Completely unrelated subject matter',
+        'title'       => 'Generic Title Two',
+        'description' => 'Completely unrelated subject matter',
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['search' => 'xylophone']))
+        ->get(route('proposals.index', ['search' => 'xylophone']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('Projects/Index')
-            ->has('projects.data', 1)
+            ->component('Proposals/Index')
+            ->has('proposals.data', 1)
         );
 });
 
 // ── 3. Case-insensitive search ────────────────────────────────────────────────
 
 test('search is case insensitive', function () {
-    makeSearchProject(overrides: ['project_title' => 'Machine Learning Application']);
+    makeSearchProject(overrides: ['title' => 'Machine Learning Application']);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['search' => 'machine learning']))
+        ->get(route('proposals.index', ['search' => 'machine learning']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('Projects/Index')
-            ->has('projects.data', 1)
+            ->component('Proposals/Index')
+            ->has('proposals.data', 1)
         );
 });
 
@@ -98,22 +101,22 @@ test('filter by department returns only that department projects', function () {
     $specB = Specialization::factory()->create(['department_id' => $deptB->id]);
     $sup   = userWithRole('supervisor');
 
-    Project::factory()->count(2)->create([
+    Proposal::factory()->count(2)->create([
         'department_id'     => $deptA->id,
         'specialization_id' => $specA->id,
         'supervisor_id'     => $sup->id,
     ]);
-    Project::factory()->create([
+    Proposal::factory()->create([
         'department_id'     => $deptB->id,
         'specialization_id' => $specB->id,
         'supervisor_id'     => $sup->id,
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['department_id' => $deptA->id]))
+        ->get(route('proposals.index', ['department_id' => $deptA->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
+            ->has('proposals.data', 2)
         );
 });
 
@@ -125,22 +128,22 @@ test('filter by specialization returns correct results', function () {
     $specB = Specialization::factory()->create(['department_id' => $dept->id]);
     $sup   = userWithRole('supervisor');
 
-    Project::factory()->count(2)->create([
+    Proposal::factory()->count(2)->create([
         'department_id'     => $dept->id,
         'specialization_id' => $specA->id,
         'supervisor_id'     => $sup->id,
     ]);
-    Project::factory()->create([
+    Proposal::factory()->create([
         'department_id'     => $dept->id,
         'specialization_id' => $specB->id,
         'supervisor_id'     => $sup->id,
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['specialization_id' => $specA->id]))
+        ->get(route('proposals.index', ['specialization_id' => $specA->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
+            ->has('proposals.data', 2)
         );
 });
 
@@ -151,13 +154,13 @@ test('filter by academic year returns correct results', function () {
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $sup  = userWithRole('supervisor');
 
-    Project::factory()->count(2)->create([
+    Proposal::factory()->count(2)->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $sup->id,
         'academic_year'     => '2024/2025',
     ]);
-    Project::factory()->create([
+    Proposal::factory()->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $sup->id,
@@ -165,10 +168,10 @@ test('filter by academic year returns correct results', function () {
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['academic_year' => '2024/2025']))
+        ->get(route('proposals.index', ['academic_year' => '2024/2025']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
+            ->has('proposals.data', 2)
         );
 });
 
@@ -180,22 +183,22 @@ test('filter by supervisor returns correct results', function () {
     $supA = userWithRole('supervisor');
     $supB = userWithRole('supervisor');
 
-    Project::factory()->count(2)->create([
+    Proposal::factory()->count(2)->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $supA->id,
     ]);
-    Project::factory()->create([
+    Proposal::factory()->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $supB->id,
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', ['supervisor_id' => $supA->id]))
+        ->get(route('proposals.index', ['supervisor_id' => $supA->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
+            ->has('proposals.data', 2)
         );
 });
 
@@ -208,22 +211,22 @@ test('combine multiple filters works correctly', function () {
     $specB = Specialization::factory()->create(['department_id' => $deptB->id]);
     $sup   = userWithRole('supervisor');
 
-    // 2 projects that should match (dept A + year 2024/2025)
-    Project::factory()->count(2)->create([
+    // 2 proposals that should match (dept A + year 2024/2025)
+    Proposal::factory()->count(2)->create([
         'department_id'     => $deptA->id,
         'specialization_id' => $specA->id,
         'supervisor_id'     => $sup->id,
         'academic_year'     => '2024/2025',
     ]);
     // Non-matching: dept A but wrong year
-    Project::factory()->create([
+    Proposal::factory()->create([
         'department_id'     => $deptA->id,
         'specialization_id' => $specA->id,
         'supervisor_id'     => $sup->id,
         'academic_year'     => '2023/2024',
     ]);
     // Non-matching: correct year but wrong dept
-    Project::factory()->create([
+    Proposal::factory()->create([
         'department_id'     => $deptB->id,
         'specialization_id' => $specB->id,
         'supervisor_id'     => $sup->id,
@@ -231,31 +234,31 @@ test('combine multiple filters works correctly', function () {
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index', [
+        ->get(route('proposals.index', [
             'department_id' => $deptA->id,
             'academic_year' => '2024/2025',
         ]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 2)
+            ->has('proposals.data', 2)
         );
 });
 
-// ── 9. Empty search returns all non-deleted projects ──────────────────────────
+// ── 9. Empty search returns all non-deleted proposals ──────────────────────────
 
 test('empty search returns all projects', function () {
     $dept = Department::factory()->create();
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $sup  = userWithRole('supervisor');
 
-    Project::factory()->count(3)->create([
+    Proposal::factory()->count(3)->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $sup->id,
         'is_deleted'        => false,
     ]);
     // Soft-deleted: must be excluded
-    Project::factory()->create([
+    Proposal::factory()->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $sup->id,
@@ -263,37 +266,37 @@ test('empty search returns all projects', function () {
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index'))
+        ->get(route('proposals.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->has('projects.data', 3)
+            ->has('proposals.data', 3)
         );
 });
 
 // ── 10. Similarity detection: finds matches ───────────────────────────────────
 
 test('similarity detection finds matching titles', function () {
-    makeSearchProject(overrides: ['project_title' => 'Smart Home Automation System']);
+    makeSearchProject(overrides: ['title' => 'Smart Home Automation System']);
 
     $results = app(SearchService::class)->detectSimilarity('Home Automation');
 
     expect($results)->toHaveCount(1);
-    expect($results->first()->project_title)->toBe('Smart Home Automation System');
+    expect($results->first()->title)->toBe('Smart Home Automation System');
 });
 
-// ── 11. Similarity detection: excludes current project ────────────────────────
+// ── 11. Similarity detection: excludes current proposal ────────────────────────
 
 test('similarity detection ignores current project when editing', function () {
-    $project = makeSearchProject(overrides: ['project_title' => 'Smart Home Automation System']);
+    $proposal = makeSearchProject(overrides: ['title' => 'Smart Home Automation System']);
 
-    // A second project with the same title DOES exist and would normally match
-    makeSearchProject(overrides: ['project_title' => 'Smart Home Automation System']);
+    // A second proposal with the same title DOES exist and would normally match
+    makeSearchProject(overrides: ['title' => 'Smart Home Automation System']);
 
-    // When excluding by id, only the other project is returned
-    $results = app(SearchService::class)->detectSimilarity('Smart Home Automation', $project->id);
+    // When excluding by id, only the other proposal is returned
+    $results = app(SearchService::class)->detectSimilarity('Smart Home Automation', $proposal->id);
 
     expect($results)->toHaveCount(1);
-    expect($results->first()->id)->not->toBe($project->id);
+    expect($results->first()->id)->not->toBe($proposal->id);
 });
 
 // ── 12. Suggestions: max 5 results ───────────────────────────────────────────
@@ -305,8 +308,8 @@ test('search suggestions returns max 5 results', function () {
 
     $titles = ['Alpha Smart', 'Beta Smart', 'Gamma Smart', 'Delta Smart', 'Epsilon Smart', 'Zeta Smart'];
     foreach ($titles as $title) {
-        Project::factory()->create([
-            'project_title'     => $title,
+        Proposal::factory()->create([
+            'title'             => $title,
             'department_id'     => $dept->id,
             'specialization_id' => $spec->id,
             'supervisor_id'     => $sup->id,
@@ -326,14 +329,14 @@ test('search suggestions returns matching titles only', function () {
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $sup  = userWithRole('supervisor');
 
-    Project::factory()->create([
-        'project_title'     => 'Neural Network Classifier',
+    Proposal::factory()->create([
+        'title'             => 'Neural Network Classifier',
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $sup->id,
     ]);
-    Project::factory()->create([
-        'project_title'     => 'Database Optimization Tool',
+    Proposal::factory()->create([
+        'title'             => 'Database Optimization Tool',
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $sup->id,
@@ -361,17 +364,17 @@ test('search results are paginated', function () {
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $sup  = userWithRole('supervisor');
 
-    Project::factory()->count(16)->create([
+    Proposal::factory()->count(16)->create([
         'department_id'     => $dept->id,
         'specialization_id' => $spec->id,
         'supervisor_id'     => $sup->id,
     ]);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.index'))
+        ->get(route('proposals.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('projects.last_page', 2)
-            ->where('projects.total', 16)
+            ->where('proposals.last_page', 2)
+            ->where('proposals.total', 16)
         );
 });

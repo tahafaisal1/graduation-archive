@@ -4,16 +4,17 @@ namespace App\Imports;
 
 use App\Models\Department;
 use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
 class ProjectsImport implements ToCollection, WithHeadingRow
 {
-    private const STATUS_ARCHIVED = 1;
-    private const PREVIEW_LIMIT   = 10;
+    private const PREVIEW_LIMIT = 10;
 
     private array $failedRows   = [];
     private array $previewRows  = [];
@@ -28,7 +29,7 @@ class ProjectsImport implements ToCollection, WithHeadingRow
     public function collection(Collection $rows): void
     {
         foreach ($rows as $index => $row) {
-            $rowNumber = $index + 2; // +2: 1-based index + heading row
+            $rowNumber = $index + 2;
             $this->processRow($row->toArray(), $rowNumber);
         }
     }
@@ -72,7 +73,6 @@ class ProjectsImport implements ToCollection, WithHeadingRow
             return;
         }
 
-        // Actual save — entities are known-good from validate()
         $department     = Department::where('code', trim($row['department_code']))->first();
         $specialization = Specialization::where('name', trim($row['specialization_name']))
             ->where('department_id', $department->id)
@@ -83,15 +83,17 @@ class ProjectsImport implements ToCollection, WithHeadingRow
             ? (float) $row['final_score']
             : null;
 
-        $project = Project::create([
-            'project_title'     => $title,
+        // Bulk-imported rows represent already-finished, historical work —
+        // create the proposal already-مؤرشف and immediately instantiate its
+        // project, matching the old importer's "create it pre-archived" behavior.
+        $proposal = Proposal::create([
+            'title'             => $title,
             'description'       => trim((string) ($row['description'] ?? '')),
             'academic_year'     => trim($row['academic_year']),
             'department_id'     => $department->id,
             'specialization_id' => $specialization->id,
             'supervisor_id'     => $supervisor->id,
-            'current_status_id' => self::STATUS_ARCHIVED,
-            'final_score'       => $finalScore,
+            'status_id'         => Proposal::STATUS_ARCHIVED,
             'is_deleted'        => false,
         ]);
 
@@ -104,12 +106,24 @@ class ProjectsImport implements ToCollection, WithHeadingRow
             if ($name === '') {
                 continue;
             }
-            $project->students()->create([
+            $proposal->students()->create([
                 'full_name'           => $name,
                 'registration_number' => trim((string) ($row[$regKey] ?? '')) ?: null,
                 'status'              => 'active',
             ]);
         }
+
+        // Auth::user() is the importing admin in normal (controller-driven)
+        // use; when the importer is invoked directly outside an
+        // authenticated request (e.g. via Excel::import() in tests), fall
+        // back to the row's own supervisor as the instantiating actor —
+        // always a real, validated User at this point.
+        // Always archive, regardless of whether a score was provided — bulk
+        // import represents already-finished historical work (see comment
+        // above), so an ungraded row must still be publicly visible, matching
+        // the old importer's unconditional STATUS_ARCHIVED behavior.
+        $project = $proposal->instantiateProject(Auth::user() ?? $supervisor);
+        $project->update(['final_score' => $finalScore, 'status_id' => Project::STATUS_ARCHIVED]);
 
         $this->successCount++;
     }

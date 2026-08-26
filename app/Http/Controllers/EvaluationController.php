@@ -13,6 +13,10 @@ class EvaluationController extends Controller
     {
         $project = Project::where('is_deleted', false)->findOrFail($projectId);
 
+        if ($project->status_id === Project::STATUS_ARCHIVED) {
+            return back()->with('error', 'لا يمكن التعديل على مشروع مؤرشف نهائيًا');
+        }
+
         $project->evaluations()->create($request->validated());
 
         return back()->with('success', 'تم إضافة التقييم بنجاح');
@@ -21,6 +25,10 @@ class EvaluationController extends Controller
     public function updateScore(int $projectId, UpdateScoreRequest $request): RedirectResponse
     {
         $project = Project::where('is_deleted', false)->findOrFail($projectId);
+
+        if ($project->status_id === Project::STATUS_ARCHIVED) {
+            return back()->with('error', 'لا يمكن التعديل على مشروع مؤرشف نهائيًا');
+        }
 
         $project->update(['final_score' => $request->validated('final_score')]);
 

@@ -3,8 +3,10 @@
 use App\Models\Department;
 use App\Models\Examiner;
 use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use App\Models\User;
+use Database\Seeders\ProjectLifecycleStatusSeeder;
 use Database\Seeders\ProjectStatusSeeder;
 use Database\Seeders\RoleSeeder;
 use Spatie\Permission\PermissionRegistrar;
@@ -13,6 +15,7 @@ beforeEach(function () {
     app()[PermissionRegistrar::class]->forgetCachedPermissions();
     $this->seed(RoleSeeder::class);
     $this->seed(ProjectStatusSeeder::class);
+    $this->seed(ProjectLifecycleStatusSeeder::class);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -42,32 +45,51 @@ function managerInDept(int $deptId): User
     return $u;
 }
 
-function pendingRvProject(int $deptId, int $specId, int $supervisorId): Project
+/** A مقترح (pending) proposal — optionally owned by $createdBy. */
+function pendingRvProposal(int $deptId, int $specId, int $supervisorId, ?int $createdBy = null): Proposal
 {
-    return Project::factory()->create([
+    return Proposal::create([
+        'title'             => 'نظام تجريبي لاختبار الصلاحيات',
+        'description'       => 'وصف المشروع التجريبي لاختبار صلاحيات المستخدمين',
+        'academic_year'     => '2025/2026',
         'department_id'     => $deptId,
         'specialization_id' => $specId,
         'supervisor_id'     => $supervisorId,
-        'current_status_id' => 2, // proposal_submitted
+        'status_id'         => Proposal::STATUS_PENDING,
+        'created_by'        => $createdBy,
         'is_deleted'        => false,
     ]);
 }
 
+/**
+ * A مؤرشف proposal with its linked (in-progress) Project already
+ * instantiated — mirrors ReportTest.php::makeReportProject(). Used
+ * wherever the old flat archivedRvProject() fed an examiner-assignment /
+ * final-score / show / department-guard test, since those all need a real
+ * Project row, not just an archived Proposal.
+ */
 function archivedRvProject(int $deptId, int $specId, int $supervisorId): Project
 {
-    return Project::factory()->create([
+    $proposal = Proposal::create([
+        'title'             => 'نظام تجريبي لاختبار الصلاحيات',
+        'description'       => 'وصف المشروع التجريبي لاختبار صلاحيات المستخدمين',
+        'academic_year'     => '2025/2026',
         'department_id'     => $deptId,
         'specialization_id' => $specId,
         'supervisor_id'     => $supervisorId,
-        'current_status_id' => 1, // archived
+        'status_id'         => Proposal::STATUS_ARCHIVED,
         'is_deleted'        => false,
     ]);
+
+    $supervisor = User::find($supervisorId);
+
+    return $proposal->instantiateProject($supervisor);
 }
 
-function validProjectPayload(int $deptId, int $specId, int $supervisorId): array
+function validProposalPayload(int $deptId, int $specId, int $supervisorId): array
 {
     return [
-        'project_title'     => 'نظام تجريبي لاختبار الصلاحيات',
+        'title'             => 'نظام تجريبي لاختبار الصلاحيات',
         'description'       => 'وصف المشروع التجريبي لاختبار صلاحيات المستخدمين',
         'academic_year'     => '2025/2026',
         'department_id'     => $deptId,
@@ -112,8 +134,10 @@ test('super_admin can access projects index', function () {
 });
 
 test('super_admin can access project create page', function () {
+    // Project creation lives under proposals now — projects.* is thin
+    // (index/show only).
     $this->actingAs(userWithRole('super_admin'))
-        ->get(route('projects.create'))
+        ->get(route('proposals.create'))
         ->assertOk();
 });
 
@@ -121,32 +145,37 @@ test('super_admin can create project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
 
     $this->actingAs(userWithRole('super_admin'))
-        ->post(route('projects.store'), validProjectPayload($dept->id, $spec->id, $sv->id))
+        ->post(route('proposals.store'), validProposalPayload($dept->id, $spec->id, $sv->id))
         ->assertRedirect();
 
-    $this->assertDatabaseHas('projects', ['project_title' => 'نظام تجريبي لاختبار الصلاحيات']);
+    $this->assertDatabaseHas('proposals', ['title' => 'نظام تجريبي لاختبار الصلاحيات']);
 });
 
-test('super_admin can approve a pending project', function () {
+test('super_admin can archive a pending project', function () {
+    // "Archiving" now means instantiating the proposal into a Project —
+    // there is no standalone archive action on Project itself.
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = pendingRvProject($dept->id, $spec->id, $sv->id);
+    $proposal = pendingRvProposal($dept->id, $spec->id, $sv->id);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->post(route('projects.approve', $project->id))
+        ->post(route('proposals.instantiate', $proposal->id))
         ->assertRedirect();
 
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'current_status_id' => 1]);
+    $this->assertDatabaseHas('proposals', ['id' => $proposal->id, 'status_id' => Proposal::STATUS_ARCHIVED]);
+    $this->assertDatabaseHas('projects', ['proposal_id' => $proposal->id]);
 });
 
 test('super_admin can soft-delete a project', function () {
+    // Deleting now targets the Proposal (Project has no destroy route);
+    // super_admin bypasses the pending-status lock that blocks everyone else.
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
     $project = archivedRvProject($dept->id, $spec->id, $sv->id);
 
     $this->actingAs(userWithRole('super_admin'))
-        ->delete(route('projects.destroy', $project->id))
-        ->assertRedirect(route('projects.index'));
+        ->delete(route('proposals.destroy', $project->proposal_id))
+        ->assertRedirect(route('proposals.index'));
 
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'is_deleted' => true]);
+    $this->assertDatabaseHas('proposals', ['id' => $project->proposal_id, 'is_deleted' => true]);
 });
 
 test('super_admin can access import', function () {
@@ -200,38 +229,40 @@ test('dept_manager can create project in their department', function () {
     $mgr = managerInDept($dept->id);
 
     $this->actingAs($mgr)
-        ->post(route('projects.store'), validProjectPayload($dept->id, $spec->id, $sv->id))
+        ->post(route('proposals.store'), validProposalPayload($dept->id, $spec->id, $sv->id))
         ->assertRedirect();
 
-    // dept_manager created projects go straight to archived (status 1)
-    $this->assertDatabaseHas('projects', [
-        'project_title'     => 'نظام تجريبي لاختبار الصلاحيات',
-        'current_status_id' => 1,
+    // Under the split, creation never auto-archives for any role — proposals
+    // always start مقترح; only instantiate() (the old "archive" action)
+    // ever moves a proposal to مؤرشف.
+    $this->assertDatabaseHas('proposals', [
+        'title'     => 'نظام تجريبي لاختبار الصلاحيات',
+        'status_id' => Proposal::STATUS_PENDING,
     ]);
 });
 
-test('dept_manager can approve a pending project', function () {
+test('dept_manager can archive a pending project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = pendingRvProject($dept->id, $spec->id, $sv->id);
-    $mgr     = managerInDept($dept->id);
+    $proposal = pendingRvProposal($dept->id, $spec->id, $sv->id);
+    $mgr      = managerInDept($dept->id);
 
     $this->actingAs($mgr)
-        ->post(route('projects.approve', $project->id))
+        ->post(route('proposals.instantiate', $proposal->id))
         ->assertRedirect();
 
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'current_status_id' => 1]);
+    $this->assertDatabaseHas('proposals', ['id' => $proposal->id, 'status_id' => Proposal::STATUS_ARCHIVED]);
 });
 
-test('dept_manager can soft-delete a project', function () {
+test('dept_manager can soft-delete a pending project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = archivedRvProject($dept->id, $spec->id, $sv->id);
-    $mgr     = managerInDept($dept->id);
+    $proposal = pendingRvProposal($dept->id, $spec->id, $sv->id);
+    $mgr      = managerInDept($dept->id);
 
     $this->actingAs($mgr)
-        ->delete(route('projects.destroy', $project->id))
-        ->assertRedirect(route('projects.index'));
+        ->delete(route('proposals.destroy', $proposal->id))
+        ->assertRedirect(route('proposals.index'));
 
-    $this->assertDatabaseHas('projects', ['id' => $project->id, 'is_deleted' => true]);
+    $this->assertDatabaseHas('proposals', ['id' => $proposal->id, 'is_deleted' => true]);
 });
 
 test('dept_manager can access department report', function () {
@@ -374,7 +405,7 @@ test('supervisor can view project detail', function () {
 
 test('supervisor cannot access project create page', function () {
     $this->actingAs(userWithRole('supervisor'))
-        ->get(route('projects.create'))
+        ->get(route('proposals.create'))
         ->assertForbidden();
 });
 
@@ -383,25 +414,25 @@ test('supervisor cannot store a new project', function () {
     $actor = userWithRole('supervisor'); // separate from the FK supervisor
 
     $this->actingAs($actor)
-        ->post(route('projects.store'), validProjectPayload($dept->id, $spec->id, $sv->id))
+        ->post(route('proposals.store'), validProposalPayload($dept->id, $spec->id, $sv->id))
         ->assertForbidden();
 });
 
 test('supervisor cannot edit a project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = archivedRvProject($dept->id, $spec->id, $sv->id);
+    $proposal = pendingRvProposal($dept->id, $spec->id, $sv->id);
 
     $this->actingAs($sv)
-        ->get(route('projects.edit', $project->id))
+        ->get(route('proposals.edit', $proposal->id))
         ->assertForbidden();
 });
 
 test('supervisor cannot delete a project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = archivedRvProject($dept->id, $spec->id, $sv->id);
+    $proposal = pendingRvProposal($dept->id, $spec->id, $sv->id);
 
     $this->actingAs($sv)
-        ->delete(route('projects.destroy', $project->id))
+        ->delete(route('proposals.destroy', $proposal->id))
         ->assertForbidden();
 });
 
@@ -451,7 +482,7 @@ test('dept_staff can view all projects', function () {
 
 test('dept_staff can access project create page', function () {
     $this->actingAs(userWithRole('dept_staff'))
-        ->get(route('projects.create'))
+        ->get(route('proposals.create'))
         ->assertOk();
 });
 
@@ -460,23 +491,23 @@ test('dept_staff can create project in their own department', function () {
     $staff = staffInDept($dept->id);
 
     $this->actingAs($staff)
-        ->post(route('projects.store'), validProjectPayload($dept->id, $spec->id, $sv->id))
+        ->post(route('proposals.store'), validProposalPayload($dept->id, $spec->id, $sv->id))
         ->assertRedirect();
 
-    // dept_staff created projects land as pending (status 2)
-    $this->assertDatabaseHas('projects', [
-        'project_title'     => 'نظام تجريبي لاختبار الصلاحيات',
-        'current_status_id' => 2,
+    // dept_staff proposals land as مقترح (pending)
+    $this->assertDatabaseHas('proposals', [
+        'title'     => 'نظام تجريبي لاختبار الصلاحيات',
+        'status_id' => Proposal::STATUS_PENDING,
     ]);
 });
 
 test('dept_staff can edit their own pending project in same department', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = pendingRvProject($dept->id, $spec->id, $sv->id);
-    $staff   = staffInDept($dept->id);
+    $staff    = staffInDept($dept->id);
+    $proposal = pendingRvProposal($dept->id, $spec->id, $sv->id, $staff->id);
 
     $this->actingAs($staff)
-        ->get(route('projects.edit', $project->id))
+        ->get(route('proposals.edit', $proposal->id))
         ->assertOk();
 });
 
@@ -486,28 +517,28 @@ test('dept_staff cannot create project in another department', function () {
     $staff     = staffInDept($otherDept->id); // staff belongs to otherDept, not $dept
 
     $this->actingAs($staff)
-        ->post(route('projects.store'), validProjectPayload($dept->id, $spec->id, $sv->id))
+        ->post(route('proposals.store'), validProposalPayload($dept->id, $spec->id, $sv->id))
         ->assertForbidden();
 });
 
 test('dept_staff cannot edit pending project from a different department', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project   = pendingRvProject($dept->id, $spec->id, $sv->id);
+    $proposal  = pendingRvProposal($dept->id, $spec->id, $sv->id);
     $otherDept = Department::factory()->create();
-    $staff     = staffInDept($otherDept->id); // staff is in otherDept, project is in $dept
+    $staff     = staffInDept($otherDept->id); // staff is in otherDept, proposal is in $dept
 
     $this->actingAs($staff)
-        ->get(route('projects.edit', $project->id))
+        ->get(route('proposals.edit', $proposal->id))
         ->assertForbidden();
 });
 
 test('dept_staff cannot edit approved (archived) project even in same department', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = archivedRvProject($dept->id, $spec->id, $sv->id); // status = 1
+    $project = archivedRvProject($dept->id, $spec->id, $sv->id); // proposal is now مؤرشف
     $staff   = staffInDept($dept->id);
 
     $this->actingAs($staff)
-        ->get(route('projects.edit', $project->id))
+        ->get(route('proposals.edit', $project->proposal_id))
         ->assertForbidden();
 });
 
@@ -517,17 +548,17 @@ test('dept_staff cannot delete a project', function () {
     $staff   = staffInDept($dept->id);
 
     $this->actingAs($staff)
-        ->delete(route('projects.destroy', $project->id))
+        ->delete(route('proposals.destroy', $project->proposal_id))
         ->assertForbidden();
 });
 
-test('dept_staff cannot approve a project', function () {
+test('dept_staff cannot archive a project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
-    $project = pendingRvProject($dept->id, $spec->id, $sv->id);
-    $staff   = staffInDept($dept->id);
+    $proposal = pendingRvProposal($dept->id, $spec->id, $sv->id);
+    $staff    = staffInDept($dept->id);
 
     $this->actingAs($staff)
-        ->post(route('projects.approve', $project->id))
+        ->post(route('proposals.instantiate', $proposal->id))
         ->assertForbidden();
 });
 
@@ -561,7 +592,7 @@ test('viewer can access dashboard', function () {
 
 test('viewer cannot access project create page', function () {
     $this->actingAs(userWithRole('viewer'))
-        ->get(route('projects.create'))
+        ->get(route('proposals.create'))
         ->assertForbidden();
 });
 
@@ -569,7 +600,7 @@ test('viewer cannot store a project', function () {
     ['dept' => $dept, 'spec' => $spec, 'supervisor' => $sv] = rvSetup();
 
     $this->actingAs(userWithRole('viewer'))
-        ->post(route('projects.store'), validProjectPayload($dept->id, $spec->id, $sv->id))
+        ->post(route('proposals.store'), validProposalPayload($dept->id, $spec->id, $sv->id))
         ->assertForbidden();
 });
 

@@ -72,8 +72,7 @@
   (archived) in `project_lifecycle_status` — public browse/show only ever surfaced مؤرشف projects,
   so a freshly-instantiated project was invisible there until its status was flipped some other
   way. This gap was closed by the Project Finalize/Archive change above. See Section 2 below for
-  the full
-  updated schema and `.superpowers/sdd/2026-08-24-proposal-project-split/` for the complete
+  the full updated schema and `.superpowers/sdd/2026-08-24-proposal-project-split/` for the complete
   per-task history (schema, models, data migration, controllers/routes, frontend, full-suite
   realignment — 232/232 tests passing, 0 failures).
 

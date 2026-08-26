@@ -34,6 +34,7 @@ interface Proposal {
 interface Project {
     id: number;
     final_score: string | null;
+    final_file_path: string | null;
     visit_count: number;
     proposal: Proposal;
     supervisor: { id: number; name: string } | null;
@@ -152,10 +153,10 @@ defineProps<{
             </div>
 
             <!-- PDF SECTION -->
-            <div v-if="project.proposal.draft_file_path" class="bg-surface border border-border rounded-xl p-6 mb-6">
+            <div v-if="project.final_file_path" class="bg-surface border border-border rounded-xl p-6 mb-6">
                 <h2 class="font-display font-bold text-lg text-text-dark mb-3">ملف المشروع</h2>
                 <a
-                    :href="'/storage/' + project.proposal.draft_file_path"
+                    :href="'/storage/' + project.final_file_path"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark transition-colors"

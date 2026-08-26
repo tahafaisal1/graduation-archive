@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 interface Department     { id: number; name: string }
@@ -33,9 +33,11 @@ const props = withDefaults(defineProps<{ projects: PaginatedProjects; heading?: 
     heading: 'المشاريع',
 });
 
+const page = usePage();
+
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'لوحة التحكم', href: '/dashboard' },
-    { title: props.heading, href: props.heading === 'مشاريعي' ? '/projects/my' : '/projects' },
+    { title: props.heading, href: page.url },
 ]);
 </script>
 

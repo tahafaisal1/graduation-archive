@@ -308,8 +308,11 @@ meaning at the same ids.
 | 1 | قيد التنفيذ (in progress) | 1 | true |
 | 2 | مؤرشف (archived) | 2 | true |
 
-Note: `instantiateProject()` always creates a new project at id=1 (قيد التنفيذ) — see the
-"Flagged limitation" note under Major Changes above; there is currently no UI to move it to id=2.
+Note: `instantiateProject()` always creates a new project at id=1 (قيد التنفيذ). Moving it to id=2
+(مؤرشف) previously required manual intervention — see the "Flagged limitation (closed
+2026-08-25)" note under Major Changes above — but this gap is now closed by the Project
+Finalize/Archive change: `POST /projects/{id}/finalize` flips the status, driven from the
+finalize card in `Projects/Show.vue`.
 
 ### Table: project_documents — DROPPED 2026-08-24 (split)
 

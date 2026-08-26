@@ -89,7 +89,7 @@ const excelUrl = computed(() => route('reports.export.excel', { type: 'departmen
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h1 class="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير الأقسام</h1>
-                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">إحصائيات المشاريع حسب الأقسام والتخصصات</p>
+                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">إحصائيات المقترحات حسب الأقسام والتخصصات</p>
                 </div>
                 <ExportButtons :pdf-url="pdfUrl" :excel-url="excelUrl" />
             </div>
@@ -126,7 +126,7 @@ const excelUrl = computed(() => route('reports.export.excel', { type: 'departmen
             <!-- Summary cards -->
             <div class="grid gap-4 sm:grid-cols-3">
                 <StatsCard
-                    title="إجمالي المشاريع"
+                    title="إجمالي المقترحات"
                     :value="totalProjects"
                     :icon="FolderOpen"
                     color="blue"
@@ -157,7 +157,7 @@ const excelUrl = computed(() => route('reports.export.excel', { type: 'departmen
                             <tr>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">القسم</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">الرمز</th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">المشاريع</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">المقترحات</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">متوسط الدرجة</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">التخصصات</th>
                             </tr>
@@ -202,7 +202,7 @@ const excelUrl = computed(() => route('reports.export.excel', { type: 'departmen
                         <thead class="bg-gray-50 dark:bg-gray-800/60">
                             <tr>
                                 <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">التخصص</th>
-                                <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المشاريع</th>
+                                <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المقترحات</th>
                                 <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">النسبة</th>
                             </tr>
                         </thead>
@@ -239,7 +239,7 @@ const excelUrl = computed(() => route('reports.export.excel', { type: 'departmen
             <!-- Supervisors -->
             <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                 <div class="border-b border-gray-200 px-5 py-3 dark:border-gray-700">
-                    <h2 class="font-semibold text-gray-700 dark:text-gray-200">المشرفون وعدد مشاريعهم</h2>
+                    <h2 class="font-semibold text-gray-700 dark:text-gray-200">المشرفون وعدد مقترحاتهم</h2>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -247,7 +247,7 @@ const excelUrl = computed(() => route('reports.export.excel', { type: 'departmen
                             <tr>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">المشرف</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">القسم</th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المشاريع</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المقترحات</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-gray-700">

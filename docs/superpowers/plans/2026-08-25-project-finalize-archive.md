@@ -390,7 +390,7 @@ function makeFinalizableProject(): array
     return compact('dept', 'project', 'examinerA', 'examinerB');
 }
 
-function attachBothExaminers(array $data, int $assignedBy): void
+function attachBothExaminers(array $data, ?int $assignedBy): void
 {
     $data['project']->examiners()->attach($data['examinerA']->id, ['assigned_by' => $assignedBy]);
     $data['project']->examiners()->attach($data['examinerB']->id, ['assigned_by' => $assignedBy]);

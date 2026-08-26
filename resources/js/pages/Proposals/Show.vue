@@ -170,7 +170,7 @@ const studentStatusLabel: Record<string, string> = {
                         class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
                         @click="showConfirmInstantiate = true"
                     >
-                        تنزيل المشروع
+                        إنشاء المشروع
                     </button>
                     <a
                         v-if="canReplace"
@@ -318,7 +318,7 @@ const studentStatusLabel: Record<string, string> = {
             :show="showConfirmInstantiate"
             title="تأكيد إنشاء المشروع"
             message="سيتم أرشفة المقترح وإنشاء مشروع جديد مرتبط به. لا يمكن التراجع عن هذا الإجراء. هل أنت متأكد؟"
-            confirm-label="تنزيل المشروع"
+            confirm-label="إنشاء المشروع"
             confirm-color="green"
             @confirmed="instantiateProject"
             @cancelled="showConfirmInstantiate = false"

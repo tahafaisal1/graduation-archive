@@ -20,6 +20,7 @@ class Project extends Model
         'proposal_id',
         'status_id',
         'final_score',
+        'final_file_path',
         'instantiated_by',
         'instantiated_at',
         'visit_count',
@@ -75,6 +76,50 @@ class Project extends Model
     public function evaluations(): HasMany
     {
         return $this->hasMany(Evaluation::class);
+    }
+
+    public function canBeFinalizedBy(User $user): bool
+    {
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        if ($this->status_id === self::STATUS_ARCHIVED) {
+            return false;
+        }
+
+        $departmentId = $this->proposal->department_id;
+
+        if ($user->hasRole('dept_manager') && $user->department_id === $departmentId) {
+            return true;
+        }
+
+        return $user->hasRole('dept_staff') && $user->department_id === $departmentId;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function finalizationBlockers(): array
+    {
+        $blockers = [];
+
+        $examinerCount = $this->examiners()->count();
+
+        if ($examinerCount === 0) {
+            $blockers[] = 'بانتظار تعيين ممتحنين';
+        } elseif ($examinerCount === 1) {
+            $blockers[] = 'بانتظار تعيين ممتحن آخر';
+        } elseif ($examinerCount > 2) {
+            // Defensive only — ProjectExaminerController::assign() already blocks a 3rd examiner.
+            $blockers[] = 'يجب أن يكون عدد الممتحنين اثنين بالضبط';
+        }
+
+        if ($this->final_score === null) {
+            $blockers[] = 'بانتظار الدرجة';
+        }
+
+        return $blockers;
     }
 
     /**

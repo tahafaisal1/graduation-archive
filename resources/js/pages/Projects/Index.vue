@@ -2,6 +2,7 @@
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 interface Department     { id: number; name: string }
 interface Specialization { id: number; name: string }
@@ -28,19 +29,21 @@ interface PaginatedProjects {
     last_page: number;
 }
 
-defineProps<{ projects: PaginatedProjects }>();
+const props = withDefaults(defineProps<{ projects: PaginatedProjects; heading?: string }>(), {
+    heading: 'المشاريع',
+});
 
-const breadcrumbs: BreadcrumbItem[] = [
+const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'لوحة التحكم', href: '/dashboard' },
-    { title: 'المشاريع', href: '/projects' },
-];
+    { title: props.heading, href: props.heading === 'مشاريعي' ? '/projects/my' : '/projects' },
+]);
 </script>
 
 <template>
-    <Head title="المشاريع" />
+    <Head :title="heading" />
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-4 p-4" dir="rtl">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">المشاريع</h1>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ heading }}</h1>
 
             <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">

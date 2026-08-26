@@ -97,6 +97,7 @@ function finalizeProject() {
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-6 p-4" dir="rtl">
             <div v-if="flash.success" class="rounded-lg bg-green-50 p-4 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">{{ flash.success }}</div>
+            <div v-if="flash.error" class="rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">{{ flash.error }}</div>
 
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div class="flex-1">
@@ -143,7 +144,7 @@ function finalizeProject() {
                             <h2 class="text-base font-semibold text-gray-800 dark:text-gray-200">
                                 المناقشون <span class="text-sm font-normal text-gray-400">({{ project.examiners.length }}/2)</span>
                             </h2>
-                            <button v-if="canManage && project.examiners.length < 2" type="button" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="showAssignModal = true">
+                            <button v-if="canManage && !isFinalized && project.examiners.length < 2" type="button" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="showAssignModal = true">
                                 + تعيين ممتحن
                             </button>
                         </div>
@@ -154,7 +155,7 @@ function finalizeProject() {
                                         <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ examiner.full_name }}</p>
                                         <p v-if="examiner.title" class="text-xs text-gray-500">{{ examiner.title }}</p>
                                     </div>
-                                    <button v-if="canManage" type="button" class="shrink-0 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20" @click="confirmRemoveExaminer = examiner">
+                                    <button v-if="canManage && !isFinalized" type="button" class="shrink-0 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20" @click="confirmRemoveExaminer = examiner">
                                         إزالة
                                     </button>
                                 </div>
@@ -180,7 +181,7 @@ function finalizeProject() {
 
                     <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
                         <h2 class="mb-4 text-base font-semibold text-gray-800 dark:text-gray-200">الدرجة النهائية</h2>
-                        <ScoreInput v-if="canManage" :project-id="project.id" :current-score="project.final_score" />
+                        <ScoreInput v-if="canManage && !isFinalized" :project-id="project.id" :current-score="project.final_score" />
                         <template v-else>
                             <div v-if="finalScore !== null" class="flex items-center gap-3">
                                 <span class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ finalScore }}</span>
@@ -200,6 +201,7 @@ function finalizeProject() {
                             </ul>
                             <p v-else class="mb-3 text-sm text-green-600 dark:text-green-400">جاهز للأرشفة</p>
                             <input type="file" accept="application/pdf" class="mb-3 block w-full text-sm text-gray-600 dark:text-gray-400" @change="onFinalFileChange" />
+                            <p v-if="finalizeForm.errors.final_file" class="mb-3 text-xs text-red-600 dark:text-red-400">{{ finalizeForm.errors.final_file }}</p>
                             <button
                                 type="button"
                                 :disabled="finalizationBlockers.length > 0 || !finalizeForm.final_file"

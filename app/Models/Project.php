@@ -80,12 +80,12 @@ class Project extends Model
 
     public function canBeFinalizedBy(User $user): bool
     {
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
         if ($this->status_id === self::STATUS_ARCHIVED) {
             return false;
+        }
+
+        if ($user->hasRole('super_admin')) {
+            return true;
         }
 
         $departmentId = $this->proposal->department_id;

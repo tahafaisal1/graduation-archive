@@ -95,6 +95,14 @@ test('canBeFinalizedBy: false once already مؤرشف', function () {
     expect($data['project']->canBeFinalizedBy($manager))->toBeFalse();
 });
 
+test('canBeFinalizedBy: false for super_admin once already مؤرشف', function () {
+    $data  = makeFinalizeProject();
+    $admin = userWithRole('super_admin');
+    $data['project']->update(['status_id' => Project::STATUS_ARCHIVED]);
+
+    expect($data['project']->canBeFinalizedBy($admin))->toBeFalse();
+});
+
 test('finalizationBlockers: lists missing examiners and missing score when zero examiners assigned', function () {
     $data = makeFinalizeProject();
 

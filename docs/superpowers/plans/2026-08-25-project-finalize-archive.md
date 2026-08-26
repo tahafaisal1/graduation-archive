@@ -1066,7 +1066,11 @@ Verify: status badge now shows "مؤرشف"; examiners/score card no longer show
 
 Log out, visit `/browse`, confirm the project now appears (previously invisible per the flagged limitation); open its public show page, confirm the download link points at the final file and works.
 
-- [ ] **Step 7: Record pass/fail per step for the final report**
+- [ ] **Step 7: Verify the API-layer lock, not just the UI lock (added 2026-08-26)**
+
+Still on the finalized project's Show page as dept_manager: confirm any remaining examiner assign/remove control and score-edit control are hidden (Task 6's `v-if="!isFinalized"` should already remove them). Then, using Playwright's request context (or curl with the same session cookie), fire a **direct** `POST /projects/{id}/assign-examiner` against the now-finalized project's id, bypassing the UI entirely. Expected: redirect back with a flash `error` (per Task 5's guard), examiner count unchanged in the DB — this is the specific check that proves Task 5's guard rejects at the API layer, not merely that the UI hides the button. If this call succeeds (200/redirect with no error, or the examiner actually gets attached), that's a real regression matching the "UI-hides-button-but-API-accepts" bug pattern from the prior branch — report it as a finding, do not gloss over it or silently patch around it in the verification report.
+
+- [ ] **Step 8: Record pass/fail per step for the final report**
 
 ---
 

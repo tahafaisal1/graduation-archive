@@ -4,7 +4,7 @@ import ConfirmDelete from '@/components/ConfirmDelete.vue';
 import ScoreInput from '@/components/ScoreInput.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem, type SharedData } from '@/types';
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 interface Department     { id: number; name: string }
@@ -25,6 +25,7 @@ interface Proposal {
 interface Project {
     id: number;
     final_score: string | null;
+    final_file_path: string | null;
     visit_count: number;
     proposal: Proposal;
     status: ProjectStatus | null;
@@ -34,7 +35,12 @@ interface Project {
     evaluations: Evaluation[];
 }
 
-const props = defineProps<{ project: Project; availableExaminers: Examiner[] }>();
+const props = defineProps<{
+    project: Project;
+    availableExaminers: Examiner[];
+    canFinalize: boolean;
+    finalizationBlockers: string[];
+}>();
 
 const page     = usePage<SharedData>();
 const flash    = computed(() => page.props.flash ?? {});
@@ -68,6 +74,22 @@ const finalScore = computed(() => {
     return isNaN(n) ? null : n;
 });
 const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value >= PASS_THRESHOLD);
+
+const showFinalizeConfirm = ref(false);
+const finalizeForm = useForm({ final_file: null as File | null });
+const isFinalized = computed(() => props.project.status?.status_name === 'مؤرشف');
+
+function onFinalFileChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    finalizeForm.final_file = input.files?.[0] ?? null;
+}
+
+function finalizeProject() {
+    finalizeForm.post(route('projects.finalize', props.project.id), {
+        forceFormData: true,
+        onFinish: () => (showFinalizeConfirm.value = false),
+    });
+}
 </script>
 
 <template>
@@ -169,11 +191,46 @@ const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value
                             <p v-else class="text-sm text-gray-500">لم تُسجَّل درجة بعد</p>
                         </template>
                     </div>
+
+                    <div v-if="!isFinalized" class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+                        <h2 class="mb-4 text-base font-semibold text-gray-800 dark:text-gray-200">رفع الملف النهائي والأرشفة</h2>
+                        <template v-if="canFinalize">
+                            <ul v-if="finalizationBlockers.length > 0" class="mb-3 space-y-1 text-sm text-amber-600 dark:text-amber-400">
+                                <li v-for="blocker in finalizationBlockers" :key="blocker">{{ blocker }}</li>
+                            </ul>
+                            <p v-else class="mb-3 text-sm text-green-600 dark:text-green-400">جاهز للأرشفة</p>
+                            <input type="file" accept="application/pdf" class="mb-3 block w-full text-sm text-gray-600 dark:text-gray-400" @change="onFinalFileChange" />
+                            <button
+                                type="button"
+                                :disabled="finalizationBlockers.length > 0 || !finalizeForm.final_file"
+                                class="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                @click="showFinalizeConfirm = true"
+                            >
+                                أرشفة نهائية
+                            </button>
+                        </template>
+                        <p v-else class="text-sm text-gray-500">لا تملك صلاحية أرشفة هذا المشروع</p>
+                    </div>
+                    <div v-else class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+                        <h2 class="mb-4 text-base font-semibold text-gray-800 dark:text-gray-200">الملف النهائي</h2>
+                        <a :href="'/storage/' + project.final_file_path" target="_blank" class="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
+                            تحميل الملف النهائي
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
 
         <ConfirmDelete :show="!!confirmRemoveExaminer" :item-name="confirmRemoveExaminer?.full_name" @confirmed="removeExaminer" @cancelled="confirmRemoveExaminer = null" />
         <AssignExaminerModal :show="showAssignModal" :project-id="project.id" :available-examiners="availableExaminers" @assigned="showAssignModal = false" @cancelled="showAssignModal = false" />
+        <ConfirmDelete
+            :show="showFinalizeConfirm"
+            title="تأكيد الأرشفة النهائية"
+            message="سيتم أرشفة هذا المشروع نهائيًا ولن يمكن التراجع عن هذه العملية أو تعديل الممتحنين/الدرجة بعدها."
+            confirm-label="أرشفة نهائية"
+            confirm-color="orange"
+            @confirmed="finalizeProject"
+            @cancelled="showFinalizeConfirm = false"
+        />
     </AppLayout>
 </template>

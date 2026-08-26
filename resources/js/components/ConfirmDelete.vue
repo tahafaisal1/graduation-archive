@@ -5,7 +5,7 @@ withDefaults(defineProps<{
     title?: string;
     message?: string;
     confirmLabel?: string;
-    confirmColor?: 'red' | 'green';
+    confirmColor?: 'red' | 'green' | 'orange';
 }>(), {
     title: 'تأكيد الحذف',
     confirmLabel: 'حذف',
@@ -52,7 +52,9 @@ const emit = defineEmits<{
                             type="button"
                             :class="[
                                 'rounded-lg px-4 py-2 text-sm font-medium text-white',
-                                confirmColor === 'green' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700',
+                                confirmColor === 'green' ? 'bg-green-600 hover:bg-green-700'
+                                    : confirmColor === 'orange' ? 'bg-orange-600 hover:bg-orange-700'
+                                    : 'bg-red-600 hover:bg-red-700',
                             ]"
                             @click="emit('confirmed')"
                         >

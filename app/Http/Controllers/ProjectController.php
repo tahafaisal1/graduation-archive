@@ -44,9 +44,14 @@ class ProjectController extends Controller
             ->orderBy('full_name')
             ->get(['id', 'full_name', 'title', 'department_id']);
 
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
         return Inertia::render('Projects/Show', [
-            'project'            => $project,
-            'availableExaminers' => $availableExaminers,
+            'project'               => $project,
+            'availableExaminers'    => $availableExaminers,
+            'canFinalize'           => $project->canBeFinalizedBy($user),
+            'finalizationBlockers'  => $project->finalizationBlockers(),
         ]);
     }
 

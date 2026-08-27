@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\FinalizeProjectRequest;
 use App\Models\Examiner;
 use App\Models\Project;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -57,9 +59,28 @@ class ProjectController extends Controller
             ->orderBy('full_name')
             ->get(['id', 'full_name', 'title', 'department_id']);
 
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
         return Inertia::render('Projects/Show', [
-            'project'            => $project,
-            'availableExaminers' => $availableExaminers,
+            'project'               => $project,
+            'availableExaminers'    => $availableExaminers,
+            'canFinalize'           => $project->canBeFinalizedBy($user),
+            'finalizationBlockers'  => $project->finalizationBlockers(),
         ]);
+    }
+
+    public function finalize(FinalizeProjectRequest $request, int $id): RedirectResponse
+    {
+        $project = Project::where('is_deleted', false)->findOrFail($id);
+
+        $path = $request->file('final_file')->store('projects/final', 'public');
+
+        $project->update([
+            'final_file_path' => $path,
+            'status_id'       => Project::STATUS_ARCHIVED,
+        ]);
+
+        return redirect()->route('projects.show', $project)->with('success', 'تم أرشفة المشروع بنجاح');
     }
 }

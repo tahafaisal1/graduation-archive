@@ -93,10 +93,14 @@ fields of its own — it reads them by reference through `project->proposal`.
   changed, not which ID means what).
 - **Project lifecycle** is a separate 2-status table (`project_lifecycle_status`): "قيد التنفيذ"
   (in progress, id=1, the default `instantiateProject()` lands a new project at) → "مؤرشف"
-  (archived, id=2). **No UI currently exists to move a project from قيد التنفيذ to مؤرشف** —
-  `PublicController`'s browse/show pages only ever surface `Project::STATUS_ARCHIVED` projects, so
-  a freshly-instantiated project is invisible there until someone flips its status directly (e.g.
-  via tinker or a future admin action). This is a known, flagged gap, not a bug.
+  (archived, id=2). The finalize flow now moves a project between these two states:
+  `POST /projects/{id}/finalize` (dept_manager/dept_staff of the project's department, or
+  super_admin — via `Project::canBeFinalizedBy()`) requires exactly 2 examiners assigned AND a
+  final score set AND a PDF upload (validated via `Project::finalizationBlockers()` /
+  `FinalizeProjectRequest`), stores the file to `final_file_path`, and moves the project to
+  `STATUS_ARCHIVED`. Once archived, `ProjectExaminerController`/`EvaluationController` reject
+  further examiner/evaluation/score changes (guard clause, `status_id === STATUS_ARCHIVED`), and
+  the project becomes visible on public browse/show with a downloadable final file.
 - Supervisor and department approval happen on paper, outside the system — there is no digital
   approval tracking. A proposal created by dept_manager/dept_staff is implicitly pre-approved by
   their role; the system's only job is to gate what can happen to it while it's مقترح (pending) —
@@ -167,10 +171,23 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - Max upload: 15MB PDF only
 
 ## Current Status
+- ✅ **Project Finalize/Archive** — see
+  `.superpowers/sdd/2026-08-25-project-finalize-archive/` for the full per-task history. Adds a
+  nullable `final_file_path` string column to `projects`; `Project::canBeFinalizedBy()`
+  (super_admin always; dept_manager/dept_staff of `proposal->department_id`; false once archived)
+  and `Project::finalizationBlockers()` (exactly-2-examiners + score gate) on the model;
+  `POST /projects/{id}/finalize` (`FinalizeProjectRequest` validates the uploaded file plus
+  readiness via the blockers above). `ProjectExaminerController`/`EvaluationController` now reject
+  writes once a project is archived (guard clause added to `assign()`/`remove()`/`store()`/
+  `updateScore()`). `Projects/Show.vue` has a new finalize card (orange `ConfirmDelete` confirm
+  dialog variant) visible to dept_manager/dept_staff/super_admin while not yet archived, showing
+  readiness blockers, then a download link once archived. `Public/Show.vue` now links to
+  `project.final_file_path` instead of `project.proposal.draft_file_path`.
 - ✅ **Supervisor "مشاريعي" route + proposal/project terminology + instantiate-button wording** —
   238/238 total suite (0 failures), frontend build clean. Fixes 3 issues found by a read-only gap
   analysis (`docs/analysis/current-system-behavior.md` on branch `analysis-current-system-behavior`,
-  issues #2/#3/#4), scoped to land independently of the still-unmerged finalize-archive PR (#1):
+  issues #2/#3/#4), originally scoped to land independently of PR #1 (finalize-archive), which was
+  unmerged at the time this branch started but has since been merged into main:
   - **`GET /projects/my` (named `projects.my`)** — the supervisor sidebar's "مشاريعي" link
     (`AppSidebar.vue`) previously pointed at a non-existent route; `/projects/{id}` (no numeric
     constraint) would have swallowed `/projects/my` as a literal `$id="my"` if registered in the
@@ -201,8 +218,9 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
     `ConfirmDelete` instance, lines ~405/468) — missed by the original gap analysis (which only
     inspected `Show.vue`) and by this branch's first pass; caught by `/code-review` on the full
     branch diff and fixed in the same pass.
-  - Base branch: `main` (`28e252b`) — deliberately not `worktree-project-finalize-archive` (PR #1),
-    which remains unmerged; confirmed with the user before starting.
+  - Base branch: `main` — originally branched independent of PR #1
+    (`worktree-project-finalize-archive`), which was unmerged at the time. PR #1 has since been
+    merged into main, and this branch was rebased/merged against the updated main before this PR.
 - ✅ **Proposal/Project Split — Task 8 final review complete** — 232/232 total suite (0 failures),
   frontend build clean. Docs (PROGRESS.md Sections 3-11) brought up to date with the split. Full
   branch diff (`main...feature/proposal-project-split`) reviewed via `/code-review`; real findings
@@ -277,12 +295,10 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
     `POST proposals/{id}/instantiate` named `proposals.instantiate`; `projects.index`/
     `projects.show` only (GET, thin — no create/store/edit/update/destroy on `Project` at all;
     project creation/replace/delete all happen on the owning `Proposal` instead).
-  - **Flagged limitation**: no UI currently exists to move a project from قيد التنفيذ (in
-    progress, id=1 in `project_lifecycle_status`, the default `instantiateProject()` lands a new
-    project at) to مؤرشف (archived, id=2) — `PublicController`'s browse/show pages only ever
-    surface `Project::STATUS_ARCHIVED` projects, so a freshly-instantiated project is invisible on
-    the public site until its status is flipped some other way (tinker, a future admin action).
-    This is a known, intentionally out-of-scope gap for this change, not a bug.
+  - The "no UI exists to move a project from قيد التنفيذ to مؤرشف" gap flagged here was
+    intentionally out of scope for this change. It was closed by the
+    `2026-08-25-project-finalize-archive` change — see the "Current Status" entry above and
+    `.superpowers/sdd/2026-08-25-project-finalize-archive/` for the full per-task history.
   - This entry supersedes/completes Tasks 1-7 of the `2026-08-24-proposal-project-split` plan
     (schema, models, data migration, controllers/routes, frontend, and full test-suite realignment
     — see `.superpowers/sdd/2026-08-24-proposal-project-split/` for the full per-task history).

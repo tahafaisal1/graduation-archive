@@ -31,6 +31,26 @@
 
 ### Major Changes
 
+- **2026-08-25 — Project Finalize/Archive.** A nullable `final_file_path` string column was added
+  to `projects` (migration `2026_08_25_150000_add_final_file_path_to_projects_table.php`, placed
+  `->after('final_score')`). `Project::canBeFinalizedBy(User $user): bool` (super_admin always;
+  dept_manager/dept_staff of `proposal->department_id`; false once the project is already
+  archived) and `Project::finalizationBlockers(): array` (returns Arabic-language blocker messages
+  unless exactly 2 examiners are assigned and a final score is set) gate the new
+  `POST /projects/{id}/finalize` route (`ProjectController::finalize()`), authorized and validated
+  by `FinalizeProjectRequest` (PDF only, max 15MB, plus the blockers above). On success the
+  uploaded file is stored to `projects/final` on the `public` disk, `final_file_path` is set, and
+  `status_id` moves to `Project::STATUS_ARCHIVED`. Once archived,
+  `ProjectExaminerController::assign()`/`remove()` and `EvaluationController::store()`/
+  `updateScore()` all reject the request with a flash error (guard clause checking
+  `status_id === Project::STATUS_ARCHIVED`) — previously these had no such lock. On the frontend,
+  `Projects/Show.vue` gained a finalize card (an orange `ConfirmDelete` confirm-dialog variant)
+  shown to dept_manager/dept_staff/super_admin while the project isn't archived yet, displaying
+  any outstanding readiness blockers and, once archived, a download link for the final file;
+  `Public/Show.vue`'s download link now points at `project.final_file_path` instead of
+  `project.proposal.draft_file_path`, closing the previously-flagged gap where a freshly
+  instantiated project had no path to becoming visible on the public site. See
+  `.superpowers/sdd/2026-08-25-project-finalize-archive/` for the full per-task history.
 - **2026-08-24 — Proposal/Project Split.** The previously-conflated `Project` entity is now two
   entities: **`Proposal`** (the paper-approved form — title/description/dept/spec/supervisor/
   students/PDF; 2-state مقترح↔مؤرشف lifecycle via `project_status`; never graded) and **`Project`**
@@ -47,11 +67,12 @@
   concepts belong to the instantiated work, not the form). New route names:
   `proposals.index/create/store/show/edit/update/destroy` + `proposals.instantiate`; `projects.*`
   is now GET-only (`index`/`show`) — no create/store/edit/update/destroy on `Project` directly.
-  **Flagged limitation:** no UI exists yet to move a project from قيد التنفيذ (in progress, the
-  default `instantiateProject()` lands it at) to مؤرشف (archived) in `project_lifecycle_status` —
-  public browse/show only ever surface مؤرشف projects, so a freshly-instantiated project is
-  invisible there until its status is flipped some other way. See Section 2 below for the full
-  updated schema and `.superpowers/sdd/2026-08-24-proposal-project-split/` for the complete
+  **Flagged limitation (closed 2026-08-25):** at the time of this change, no UI existed to move a
+  project from قيد التنفيذ (in progress, the default `instantiateProject()` lands it at) to مؤرشف
+  (archived) in `project_lifecycle_status` — public browse/show only ever surfaced مؤرشف projects,
+  so a freshly-instantiated project was invisible there until its status was flipped some other
+  way. This gap was closed by the Project Finalize/Archive change above. See Section 2 below for
+  the full updated schema and `.superpowers/sdd/2026-08-24-proposal-project-split/` for the complete
   per-task history (schema, models, data migration, controllers/routes, frontend, full-suite
   realignment — 232/232 tests passing, 0 failures).
 
@@ -264,6 +285,7 @@ through `$project->proposal`, never duplicates them onto this table.
 | proposal_id | bigint unsigned, FK, unique | No | — | FK to proposals.id (restrictOnDelete) — one project per proposal |
 | status_id | tinyint unsigned, FK | No | — | FK to project_lifecycle_status.id (2-state قيد التنفيذ/مؤرشف lifecycle — NOT the same table as proposals.status_id) |
 | final_score | decimal(5,2) | Yes | null | Final score out of 100 |
+| final_file_path | varchar(255) | Yes | null | Path to the uploaded final project PDF, set by ProjectController::finalize() |
 | instantiated_by | bigint unsigned, FK | Yes | null | FK to users.id (nullOnDelete) — who ran instantiateProject(); null for legacy-migrated rows |
 | instantiated_at | timestamp | Yes | null | When instantiateProject() ran |
 | visit_count | int unsigned | No | 0 | Page view counter |
@@ -322,8 +344,11 @@ meaning at the same ids.
 | 1 | قيد التنفيذ (in progress) | 1 | true |
 | 2 | مؤرشف (archived) | 2 | true |
 
-Note: `instantiateProject()` always creates a new project at id=1 (قيد التنفيذ) — see the
-"Flagged limitation" note under Major Changes above; there is currently no UI to move it to id=2.
+Note: `instantiateProject()` always creates a new project at id=1 (قيد التنفيذ). Moving it to id=2
+(مؤرشف) previously required manual intervention — see the "Flagged limitation (closed
+2026-08-25)" note under Major Changes above — but this gap is now closed by the Project
+Finalize/Archive change: `POST /projects/{id}/finalize` flips the status, driven from the
+finalize card in `Projects/Show.vue`.
 
 ### Table: project_documents — DROPPED 2026-08-24 (split)
 
@@ -616,13 +641,15 @@ live bug — flagged here for a future cleanup/deletion pass.
 ### app/Http/Controllers/ProjectController.php (full rewrite, 2026-08-24 split)
 
 **Purpose:** Thin, read-only listing/detail of instantiated projects. No create/store/edit/update/
-destroy/archive — all project creation/replace/delete/instantiate now happens on the owning
-`Proposal` (see `ProposalController` below).
+destroy — all project creation/replace/delete/instantiate happens on the owning `Proposal` (see
+`ProposalController` below). `finalize()` (added 2026-08-25) is the one exception to this
+thin-controller pattern — it's the sole write path on `Project` directly.
 
 | Method | HTTP + URL | Receives | Does | Returns | Roles |
 |---|---|---|---|---|---|
 | index() | GET /projects | Request | `Project::with(['proposal.department','proposal.specialization','proposal.supervisor','proposal.students','status'])->where('is_deleted', false)->latest()->paginate(15)` | Inertia: Projects/Index | auth |
-| show() | GET /projects/{id} | id | Eager-loads the same proposal relations plus `status`, `examiners.department:id,name`, `evaluations`; increments visit_count; returns `availableExaminers` (examiners not yet assigned) | Inertia: Projects/Show | auth |
+| show() | GET /projects/{id} | id | Eager-loads the same proposal relations plus `status`, `examiners.department:id,name`, `evaluations`; increments visit_count; returns `availableExaminers` (examiners not yet assigned), plus `canFinalize`/`finalizationBlockers` for the finalize card | Inertia: Projects/Show | auth |
+| finalize() | POST /projects/{id}/finalize | FinalizeProjectRequest, id | Stores uploaded PDF to `projects/final` disk, sets `final_file_path` + `status_id`=STATUS_ARCHIVED | Redirect to projects.show | per `canBeFinalizedBy()` (dept_manager/dept_staff of that department, or super_admin) — enforced in the Form Request |
 
 Note (per the controller's own inline comment): `proposal.supervisor` and `proposal.students` must
 both be eager-loaded on every query even where a view doesn't render students, because
@@ -684,6 +711,10 @@ rows, not `Project`.
 | assign() | POST /projects/{id}/assign-examiner | int $projectId, AssignExaminerRequest | Checks max 2 cap; checks duplicate; attaches with assigned_by=Auth::id() | Redirect back | super_admin, dept_manager |
 | remove() | DELETE /projects/{id}/examiners/{examinerId} | int $projectId, int $examinerId | Detaches examiner from project | Redirect back | super_admin, dept_manager |
 
+Both `assign()` and `remove()` now reject the request with a flash error ("لا يمكن التعديل على
+مشروع مؤرشف نهائيًا") if the project's `status_id === Project::STATUS_ARCHIVED` (added 2026-08-25,
+alongside the finalize flow).
+
 ### app/Http/Controllers/EvaluationController.php
 
 **Purpose:** Add evaluation notes per examiner and update a project's final score.
@@ -692,6 +723,10 @@ rows, not `Project`.
 |---|---|---|---|---|---|
 | store() | POST /projects/{id}/evaluation | int $projectId, StoreEvaluationRequest | project->evaluations()->create(validated) | Redirect back | super_admin, dept_manager |
 | updateScore() | PATCH /projects/{id}/score | int $projectId, UpdateScoreRequest | project->update(['final_score' => ...]) | Redirect back | super_admin, dept_manager |
+
+Both `store()` and `updateScore()` now reject the request with a flash error ("لا يمكن التعديل على
+مشروع مؤرشف نهائيًا") if the project's `status_id === Project::STATUS_ARCHIVED` (added 2026-08-25,
+alongside the finalize flow).
 
 ### app/Http/Controllers/ImportController.php
 

@@ -4,7 +4,7 @@ import ConfirmDelete from '@/components/ConfirmDelete.vue';
 import ScoreInput from '@/components/ScoreInput.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem, type SharedData } from '@/types';
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 interface Department     { id: number; name: string }
@@ -25,6 +25,7 @@ interface Proposal {
 interface Project {
     id: number;
     final_score: string | null;
+    final_file_path: string | null;
     visit_count: number;
     proposal: Proposal;
     status: ProjectStatus | null;
@@ -34,7 +35,12 @@ interface Project {
     evaluations: Evaluation[];
 }
 
-const props = defineProps<{ project: Project; availableExaminers: Examiner[] }>();
+const props = defineProps<{
+    project: Project;
+    availableExaminers: Examiner[];
+    canFinalize: boolean;
+    finalizationBlockers: string[];
+}>();
 
 const page     = usePage<SharedData>();
 const flash    = computed(() => page.props.flash ?? {});
@@ -68,6 +74,22 @@ const finalScore = computed(() => {
     return isNaN(n) ? null : n;
 });
 const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value >= PASS_THRESHOLD);
+
+const showFinalizeConfirm = ref(false);
+const finalizeForm = useForm({ final_file: null as File | null });
+const isFinalized = computed(() => props.project.status?.status_name === 'مؤرشف');
+
+function onFinalFileChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    finalizeForm.final_file = input.files?.[0] ?? null;
+}
+
+function finalizeProject() {
+    finalizeForm.post(route('projects.finalize', props.project.id), {
+        forceFormData: true,
+        onFinish: () => (showFinalizeConfirm.value = false),
+    });
+}
 </script>
 
 <template>
@@ -75,6 +97,7 @@ const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-6 p-4" dir="rtl">
             <div v-if="flash.success" class="rounded-lg bg-green-50 p-4 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">{{ flash.success }}</div>
+            <div v-if="flash.error" class="rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">{{ flash.error }}</div>
 
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div class="flex-1">
@@ -121,7 +144,7 @@ const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value
                             <h2 class="text-base font-semibold text-gray-800 dark:text-gray-200">
                                 المناقشون <span class="text-sm font-normal text-gray-400">({{ project.examiners.length }}/2)</span>
                             </h2>
-                            <button v-if="canManage && project.examiners.length < 2" type="button" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="showAssignModal = true">
+                            <button v-if="canManage && !isFinalized && project.examiners.length < 2" type="button" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="showAssignModal = true">
                                 + تعيين ممتحن
                             </button>
                         </div>
@@ -132,7 +155,7 @@ const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value
                                         <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ examiner.full_name }}</p>
                                         <p v-if="examiner.title" class="text-xs text-gray-500">{{ examiner.title }}</p>
                                     </div>
-                                    <button v-if="canManage" type="button" class="shrink-0 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20" @click="confirmRemoveExaminer = examiner">
+                                    <button v-if="canManage && !isFinalized" type="button" class="shrink-0 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20" @click="confirmRemoveExaminer = examiner">
                                         إزالة
                                     </button>
                                 </div>
@@ -158,7 +181,7 @@ const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value
 
                     <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
                         <h2 class="mb-4 text-base font-semibold text-gray-800 dark:text-gray-200">الدرجة النهائية</h2>
-                        <ScoreInput v-if="canManage" :project-id="project.id" :current-score="project.final_score" />
+                        <ScoreInput v-if="canManage && !isFinalized" :project-id="project.id" :current-score="project.final_score" />
                         <template v-else>
                             <div v-if="finalScore !== null" class="flex items-center gap-3">
                                 <span class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ finalScore }}</span>
@@ -169,11 +192,47 @@ const scoreIsPass = computed(() => finalScore.value !== null && finalScore.value
                             <p v-else class="text-sm text-gray-500">لم تُسجَّل درجة بعد</p>
                         </template>
                     </div>
+
+                    <div v-if="!isFinalized" class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+                        <h2 class="mb-4 text-base font-semibold text-gray-800 dark:text-gray-200">رفع الملف النهائي والأرشفة</h2>
+                        <template v-if="canFinalize">
+                            <ul v-if="finalizationBlockers.length > 0" class="mb-3 space-y-1 text-sm text-amber-600 dark:text-amber-400">
+                                <li v-for="blocker in finalizationBlockers" :key="blocker">{{ blocker }}</li>
+                            </ul>
+                            <p v-else class="mb-3 text-sm text-green-600 dark:text-green-400">جاهز للأرشفة</p>
+                            <input type="file" accept="application/pdf" class="mb-3 block w-full text-sm text-gray-600 dark:text-gray-400" @change="onFinalFileChange" />
+                            <p v-if="finalizeForm.errors.final_file" class="mb-3 text-xs text-red-600 dark:text-red-400">{{ finalizeForm.errors.final_file }}</p>
+                            <button
+                                type="button"
+                                :disabled="finalizationBlockers.length > 0 || !finalizeForm.final_file"
+                                class="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                @click="showFinalizeConfirm = true"
+                            >
+                                أرشفة نهائية
+                            </button>
+                        </template>
+                        <p v-else class="text-sm text-gray-500">لا تملك صلاحية أرشفة هذا المشروع</p>
+                    </div>
+                    <div v-else class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+                        <h2 class="mb-4 text-base font-semibold text-gray-800 dark:text-gray-200">الملف النهائي</h2>
+                        <a :href="'/storage/' + project.final_file_path" target="_blank" class="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
+                            تحميل الملف النهائي
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
 
         <ConfirmDelete :show="!!confirmRemoveExaminer" :item-name="confirmRemoveExaminer?.full_name" @confirmed="removeExaminer" @cancelled="confirmRemoveExaminer = null" />
         <AssignExaminerModal :show="showAssignModal" :project-id="project.id" :available-examiners="availableExaminers" @assigned="showAssignModal = false" @cancelled="showAssignModal = false" />
+        <ConfirmDelete
+            :show="showFinalizeConfirm"
+            title="تأكيد الأرشفة النهائية"
+            message="سيتم أرشفة هذا المشروع نهائيًا ولن يمكن التراجع عن هذه العملية أو تعديل الممتحنين/الدرجة بعدها."
+            confirm-label="أرشفة نهائية"
+            confirm-color="orange"
+            @confirmed="finalizeProject"
+            @cancelled="showFinalizeConfirm = false"
+        />
     </AppLayout>
 </template>

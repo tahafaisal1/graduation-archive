@@ -1898,6 +1898,10 @@ Changes / Bugfixes entries for the change history that led here.
 - **is_active on specializations** — The column exists on the specializations table (default true) but no filter in the application restricts inactive specializations from appearing in dropdowns.
 - **Arabic text in PHP controllers** — Flash messages in controllers use Arabic strings (e.g., "تم إنشاء القسم بنجاح"). This mixes display language into backend logic; consider using lang files for maintainability.
 
+### CI / Test Environment
+
+- **CI's `Inertia::ensurePagesExist` checks fail on the Linux runner** due to a case/path mismatch with `resources/js/pages` — pre-existing since ~2026-07-03, environmental not code-level. Every `->component()` test assertion is affected on CI; all pass locally. Deferred to a dedicated CI-hardening branch.
+
 ---
 
 ## 15. How to Run the Project

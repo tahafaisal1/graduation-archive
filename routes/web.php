@@ -83,6 +83,9 @@ Route::middleware(['auth'])->group(function () {
         ->name('proposals.instantiate');
 
     Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
+    Route::get('projects/my', [ProjectController::class, 'myProjects'])
+        ->middleware('role:supervisor')
+        ->name('projects.my');
     Route::get('projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
 
     Route::post('projects/{id}/finalize', [ProjectController::class, 'finalize'])

@@ -104,7 +104,7 @@ const sorted = computed(() => {
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h1 class="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير المشرفين</h1>
-                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">إحصائيات المشرفين وعدد مشاريعهم ومتوسط درجاتهم</p>
+                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">إحصائيات المشرفين وعدد مقترحاتهم ومتوسط درجاتهم</p>
                 </div>
                 <ExportButtons :pdf-url="pdfUrl" :excel-url="excelUrl" />
             </div>
@@ -159,7 +159,7 @@ const sorted = computed(() => {
                                     @click="toggleSort('project_count')"
                                 >
                                     <span class="inline-flex items-center gap-1">
-                                        عدد المشاريع <ArrowUpDown :size="12" />
+                                        عدد المقترحات <ArrowUpDown :size="12" />
                                     </span>
                                     {{ sortIndicator('project_count') }}
                                 </th>
@@ -172,7 +172,7 @@ const sorted = computed(() => {
                                     </span>
                                     {{ sortIndicator('avg_score') }}
                                 </th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">المشاريع بالسنة</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">المقترحات بالسنة</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-gray-700">

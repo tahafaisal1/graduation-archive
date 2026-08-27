@@ -183,6 +183,44 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
   dialog variant) visible to dept_manager/dept_staff/super_admin while not yet archived, showing
   readiness blockers, then a download link once archived. `Public/Show.vue` now links to
   `project.final_file_path` instead of `project.proposal.draft_file_path`.
+- ✅ **Supervisor "مشاريعي" route + proposal/project terminology + instantiate-button wording** —
+  238/238 total suite (0 failures), frontend build clean. Fixes 3 issues found by a read-only gap
+  analysis (`docs/analysis/current-system-behavior.md` on branch `analysis-current-system-behavior`,
+  issues #2/#3/#4), originally scoped to land independently of PR #1 (finalize-archive), which was
+  unmerged at the time this branch started but has since been merged into main:
+  - **`GET /projects/my` (named `projects.my`)** — the supervisor sidebar's "مشاريعي" link
+    (`AppSidebar.vue`) previously pointed at a non-existent route; `/projects/{id}` (no numeric
+    constraint) would have swallowed `/projects/my` as a literal `$id="my"` if registered in the
+    wrong order, so `projects/my` is registered before `projects/{id}` in `routes/web.php`.
+    `ProjectController::myProjects()` scopes to `Project::whereHas('proposal', fn ($q) =>
+    $q->where('supervisor_id', $request->user()->id))`; the route carries `role:supervisor`
+    middleware (403 for every other role, including super_admin). Reuses `Projects/Index.vue` via
+    a new optional `heading` prop (default `'المشاريع'`) instead of a duplicate Vue page.
+    `tests/Feature/Project/MyProjectsTest.php` — 3 tests (6 assertions incl. the 4-role-dataset
+    forbidden test): supervisor sees only their own projects, all 4 non-supervisor roles get 403,
+    the route renders `Projects/Index` with the `مشاريعي` heading and correctly-scoped data.
+  - **Proposal-vs-project terminology** — `Dashboard.vue`, `Search/Index.vue`, and (scope expanded
+    during planning after the same leak was found there too) all 4 `Reports/*.vue` pages labeled
+    `Proposal`-backed counts as "مشروع/مشاريع" instead of "مقترح/مقترحات". Root cause: `ReportService`
+    (`app/Services/ReportService.php`) sources nearly every count field from `Proposal`/`proposals()`
+    relations — only `avg_score`/`scored_count` (via `avgScoresGroupedBy()`, joining `projects.
+    final_score`) are genuinely `Project`-backed, and those labels were left as "مشاريع" deliberately.
+    ~24 Arabic-copy edits total across 6 files; no route, prop, or backend key renamed. Also renamed
+    `Search/Index.vue`'s misleading `project` loop variable (line ~187, iterating Proposal rows) to
+    `proposal` for code clarity — the id it passed to `proposals.show` was already correct.
+  - **"تنزيل المشروع" → "إنشاء المشروع"** — `Proposals/Show.vue`'s instantiate-proposal button said
+    "Download the project" for an action that archives the proposal and creates a `Project` row; its
+    confirm dialog already had a correct `title` ("تأكيد إنشاء المشروع") and `message`, but its
+    `confirm-label` still said "تنزيل المشروع", disagreeing with its own title. Both the button and
+    the `confirm-label` now say "إنشاء المشروع"; the dialog's `title`/`message` were already correct
+    and untouched. The real PDF-download link ("↓ تنزيل الملف") on the same page is unrelated and
+    unchanged. **`Proposals/Index.vue` had the identical bug** (row-action button + its own
+    `ConfirmDelete` instance, lines ~405/468) — missed by the original gap analysis (which only
+    inspected `Show.vue`) and by this branch's first pass; caught by `/code-review` on the full
+    branch diff and fixed in the same pass.
+  - Base branch: `main` — originally branched independent of PR #1
+    (`worktree-project-finalize-archive`), which was unmerged at the time. PR #1 has since been
+    merged into main, and this branch was rebased/merged against the updated main before this PR.
 - ✅ **Proposal/Project Split — Task 8 final review complete** — 232/232 total suite (0 failures),
   frontend build clean. Docs (PROGRESS.md Sections 3-11) brought up to date with the split. Full
   branch diff (`main...feature/proposal-project-split`) reviewed via `/code-review`; real findings

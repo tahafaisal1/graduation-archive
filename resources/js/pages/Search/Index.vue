@@ -134,10 +134,10 @@ function highlight(text: string): string {
 
             <!-- ── Search hero ────────────────────────────────────── -->
             <div class="flex flex-col gap-3">
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">البحث في المشاريع</h1>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">البحث في المقترحات</h1>
                 <SearchBar
                     v-model="searchQuery"
-                    placeholder="ابحث عن مشروع بالعنوان أو الوصف..."
+                    placeholder="ابحث عن مقترح بالعنوان أو الوصف..."
                     :suggestions="suggestions"
                     class="max-w-2xl"
                     @search="onSearch"
@@ -156,12 +156,12 @@ function highlight(text: string): string {
                 <div v-else class="flex flex-col items-center gap-3 py-16 text-gray-500 dark:text-gray-400">
                     <span class="text-4xl">🔍</span>
                     <p class="text-lg font-medium">لا توجد نتائج</p>
-                    <p class="text-sm">لم يتم العثور على مشاريع تطابق "{{ searchQuery }}"</p>
+                    <p class="text-sm">لم يتم العثور على مقترحات تطابق "{{ searchQuery }}"</p>
                 </div>
             </template>
 
             <p v-else class="text-sm text-gray-500 dark:text-gray-400">
-                اكتب كلمة بحث للعثور على المشاريع
+                اكتب كلمة بحث للعثور على المقترحات
             </p>
 
             <!-- ── Results grouped by department ─────────────────── -->
@@ -184,34 +184,34 @@ function highlight(text: string): string {
                     <!-- Project cards -->
                     <div class="flex flex-col gap-3">
                         <a
-                            v-for="project in deptProjects"
-                            :key="project.id"
-                            :href="route('proposals.show', [project.id])"
+                            v-for="proposal in deptProjects"
+                            :key="proposal.id"
+                            :href="route('proposals.show', [proposal.id])"
                             class="block rounded-lg border border-gray-200 bg-white p-4 transition hover:border-blue-300 hover:shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-700"
                         >
                             <!-- Title with highlight -->
                             <p
                                 class="text-sm font-semibold text-blue-600 dark:text-blue-400"
-                                v-html="highlight(project.title)"
+                                v-html="highlight(proposal.title)"
                             />
 
                             <!-- Meta row -->
                             <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                                <span v-if="project.specialization">
-                                    📚 {{ project.specialization.name }}
+                                <span v-if="proposal.specialization">
+                                    📚 {{ proposal.specialization.name }}
                                 </span>
-                                <span v-if="project.academic_year">
-                                    📅 {{ project.academic_year }}
+                                <span v-if="proposal.academic_year">
+                                    📅 {{ proposal.academic_year }}
                                 </span>
-                                <span v-if="project.supervisor">
-                                    👤 {{ project.supervisor.name }}
+                                <span v-if="proposal.supervisor">
+                                    👤 {{ proposal.supervisor.name }}
                                 </span>
                             </div>
 
                             <!-- Students -->
-                            <div v-if="project.students && project.students.length > 0" class="mt-1.5 flex flex-wrap gap-1">
+                            <div v-if="proposal.students && proposal.students.length > 0" class="mt-1.5 flex flex-wrap gap-1">
                                 <span
-                                    v-for="student in project.students"
+                                    v-for="student in proposal.students"
                                     :key="student.id"
                                     class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400"
                                 >
@@ -221,9 +221,9 @@ function highlight(text: string): string {
 
                             <!-- Description snippet with highlight -->
                             <p
-                                v-if="project.description"
+                                v-if="proposal.description"
                                 class="mt-2 line-clamp-2 text-xs text-gray-500 dark:text-gray-400"
-                                v-html="highlight(project.description)"
+                                v-html="highlight(proposal.description)"
                             />
                         </a>
                     </div>

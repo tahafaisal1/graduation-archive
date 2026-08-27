@@ -29,6 +29,21 @@ class ProjectController extends Controller
         return Inertia::render('Projects/Index', ['projects' => $projects]);
     }
 
+    public function myProjects(Request $request): Response
+    {
+        $projects = Project::whereHas('proposal', fn ($q) => $q->where('supervisor_id', $request->user()->id))
+            ->with(['proposal.department', 'status'])
+            ->where('is_deleted', false)
+            ->latest()
+            ->paginate(15)
+            ->withQueryString();
+
+        return Inertia::render('Projects/Index', [
+            'projects' => $projects,
+            'heading'  => 'مشاريعي',
+        ]);
+    }
+
     public function show(int $id): Response
     {
         $project = Project::with([

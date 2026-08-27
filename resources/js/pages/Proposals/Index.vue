@@ -402,7 +402,7 @@ function instantiateProject() {
                                         class="rounded bg-indigo-100 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400"
                                         @click="confirmInstantiate = proposal"
                                     >
-                                        تنزيل المشروع
+                                        إنشاء المشروع
                                     </button>
                                     <button
                                         v-if="canDeleteProject(proposal)"
@@ -465,7 +465,7 @@ function instantiateProject() {
                 :show="!!confirmInstantiate"
                 title="تأكيد إنشاء المشروع"
                 message="سيتم أرشفة المقترح وإنشاء مشروع جديد مرتبط به. لا يمكن التراجع عن هذا الإجراء. هل أنت متأكد؟"
-                confirm-label="تنزيل المشروع"
+                confirm-label="إنشاء المشروع"
                 confirm-color="green"
                 @confirmed="instantiateProject"
                 @cancelled="confirmInstantiate = null"

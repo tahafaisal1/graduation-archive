@@ -81,7 +81,7 @@ const yearTotals = computed(() => {
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h1 class="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير التخصصات</h1>
-                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">توزيع المشاريع على التخصصات والاتجاهات السنوية</p>
+                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">توزيع المقترحات على التخصصات والاتجاهات السنوية</p>
                 </div>
                 <ExportButtons :pdf-url="pdfUrl" :excel-url="excelUrl" />
             </div>
@@ -125,7 +125,7 @@ const yearTotals = computed(() => {
                 class="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
             >
                 <div class="border-b border-gray-200 px-5 py-3 dark:border-gray-700">
-                    <h2 class="font-semibold text-gray-700 dark:text-gray-200">الاتجاه السنوي — إجمالي مشاريع التخصصات</h2>
+                    <h2 class="font-semibold text-gray-700 dark:text-gray-200">الاتجاه السنوي — إجمالي مقترحات التخصصات</h2>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -135,7 +135,7 @@ const yearTotals = computed(() => {
                                     السنة الأكاديمية
                                 </th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">
-                                    إجمالي المشاريع
+                                    إجمالي المقترحات
                                 </th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">
                                     الشريط البياني
@@ -179,7 +179,7 @@ const yearTotals = computed(() => {
                             <tr>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">التخصص</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">القسم</th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المشاريع</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المقترحات</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-gray-700">

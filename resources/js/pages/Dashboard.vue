@@ -91,7 +91,7 @@ const reportLinks = [
                 <!-- 4 Stats cards -->
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <StatsCard
-                        title="إجمالي المشاريع"
+                        title="إجمالي المقترحات"
                         :value="stats.total_projects ?? 0"
                         :icon="FolderOpen"
                         color="blue"
@@ -103,13 +103,13 @@ const reportLinks = [
                         color="green"
                     />
                     <StatsCard
-                        title="مشاريع هذا العام"
+                        title="مقترحات هذا العام"
                         :value="stats.projects_this_year ?? 0"
                         :icon="Calendar"
                         color="purple"
                     />
                     <StatsCard
-                        title="مشاريع مقترحة"
+                        title="مقترحات قيد الانتظار"
                         :value="stats.pending_approvals ?? 0"
                         :icon="Clock"
                         color="orange"
@@ -122,13 +122,13 @@ const reportLinks = [
                     <!-- Recent projects table (3/5) -->
                     <div class="lg:col-span-3 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                         <div class="border-b border-gray-200 px-5 py-3 dark:border-gray-700">
-                            <h3 class="font-semibold text-gray-700 dark:text-gray-200">آخر المشاريع المضافة</h3>
+                            <h3 class="font-semibold text-gray-700 dark:text-gray-200">آخر المقترحات المضافة</h3>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                                 <thead class="bg-gray-50 dark:bg-gray-800/60">
                                     <tr>
-                                        <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عنوان المشروع</th>
+                                        <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عنوان المقترح</th>
                                         <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">القسم</th>
                                         <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">السنة</th>
                                         <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">الحالة</th>
@@ -161,7 +161,7 @@ const reportLinks = [
                                         </td>
                                     </tr>
                                     <tr v-if="!stats.recent_projects?.length">
-                                        <td colspan="4" class="px-4 py-6 text-center text-sm text-gray-400">لا توجد مشاريع</td>
+                                        <td colspan="4" class="px-4 py-6 text-center text-sm text-gray-400">لا توجد مقترحات</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -171,7 +171,7 @@ const reportLinks = [
                     <!-- Status breakdown (2/5) -->
                     <div class="lg:col-span-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                         <div class="border-b border-gray-200 px-5 py-3 dark:border-gray-700">
-                            <h3 class="font-semibold text-gray-700 dark:text-gray-200">المشاريع حسب الحالة</h3>
+                            <h3 class="font-semibold text-gray-700 dark:text-gray-200">المقترحات حسب الحالة</h3>
                         </div>
                         <div class="space-y-3 p-5">
                             <div
@@ -220,7 +220,7 @@ const reportLinks = [
                 <!-- Stats cards -->
                 <div class="grid gap-4 sm:grid-cols-3">
                     <StatsCard
-                        title="مشاريع القسم"
+                        title="مقترحات القسم"
                         :value="stats.project_count ?? 0"
                         :icon="FolderOpen"
                         color="blue"
@@ -253,7 +253,7 @@ const reportLinks = [
                                 <thead class="bg-gray-50 dark:bg-gray-800/60">
                                     <tr>
                                         <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">التخصص</th>
-                                        <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المشاريع</th>
+                                        <th class="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المقترحات</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
@@ -286,7 +286,7 @@ const reportLinks = [
                             >
                                 <span class="text-sm text-gray-800 dark:text-gray-200">{{ sup.name }}</span>
                                 <span class="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                    {{ sup.project_count }} مشروع
+                                    {{ sup.project_count }} مقترح
                                 </span>
                             </div>
                             <div v-if="!stats.supervisors?.length" class="px-5 py-6 text-center text-sm text-gray-400">
@@ -320,7 +320,7 @@ const reportLinks = [
             <template v-else>
                 <div class="grid gap-4 sm:grid-cols-2">
                     <StatsCard
-                        title="إجمالي المشاريع"
+                        title="إجمالي المقترحات"
                         :value="stats.total_projects ?? 0"
                         :icon="FolderOpen"
                         color="blue"

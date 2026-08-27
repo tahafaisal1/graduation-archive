@@ -96,7 +96,7 @@ function growthClass(pct: number | null) {
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h1 class="text-xl font-bold text-gray-800 dark:text-gray-100">التقرير السنوي</h1>
-                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">مقارنة المشاريع عبر السنوات الأكاديمية</p>
+                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">مقارنة المقترحات عبر السنوات الأكاديمية</p>
                 </div>
                 <ExportButtons :pdf-url="pdfUrl" :excel-url="excelUrl" />
             </div>
@@ -104,7 +104,7 @@ function growthClass(pct: number | null) {
             <!-- Summary cards -->
             <div class="grid gap-4 sm:grid-cols-3">
                 <StatsCard
-                    title="إجمالي المشاريع"
+                    title="إجمالي المقترحات"
                     :value="totalAll"
                     color="blue"
                 />
@@ -131,7 +131,7 @@ function growthClass(pct: number | null) {
                         <thead class="bg-gray-50 dark:bg-gray-800/60">
                             <tr>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">السنة الأكاديمية</th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المشاريع</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">عدد المقترحات</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">نسبة النمو</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">الشريط البياني</th>
                             </tr>

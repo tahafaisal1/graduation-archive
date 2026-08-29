@@ -2067,6 +2067,10 @@ composer run dev
 
 App will be accessible at: http://localhost:8000
 
+### Mailpit (required for manual testing of the staff-invitation flow)
+
+The `.env` mail settings point at Mailpit (`MAIL_MAILER=smtp`, `MAIL_HOST=127.0.0.1`, `MAIL_PORT=1025`); the automated test suite uses the `array` mailer and does not need it. To manually exercise the invite-only account-creation flow (Fix 5, 2026-08-29), install Mailpit from https://mailpit.axllent.org/docs/install/ (or `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`), run `mailpit`, and read delivered invitations at http://localhost:8025.
+
 ### Running Tests
 
 ```bash

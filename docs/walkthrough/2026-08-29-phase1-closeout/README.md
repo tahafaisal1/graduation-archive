@@ -9,6 +9,8 @@ super_admin login (`admin@admin.com`).
 |---|---|---|
 | 1 | `1-landing-no-login.png` | **Fix 1** — landing page: no login button in the header, hero, or CTA band (`route('login')` absent from the page). |
 | 2 | `2-sidebar-no-browse.png` | **Fix 2** — authenticated sidebar (super_admin): no "تصفح المشاريع" entry. |
+| 2b | `2b-browse-no-login-button.png` | **Fix 1 (extended)** — `/browse` header: logo + title only, no "تسجيل الدخول" button. |
+| 2c | `2c-browse-show-no-login-button.png` | **Fix 1 (extended)** — `/browse/{id}` header: same, no login button. |
 | 3a | `3a-search-by-student-name.png` | **Fix 3** — `/search?search=السلمي` returns 4 projects matched via a student's name, each with a "مشروع مؤرشف" badge and a link to `projects.show`. |
 | 3b | `3b-browse-proposal-only-absent.png` | **Fix 3** — `/browse?search=بوابة التعليم` (a pending-proposal title) returns "لا توجد مشاريع تطابق البحث" — proposals stay out of the public browse. |
 | 4 | `4-admin-users-employee-number-column.png` | **Fix 4** — `/admin/users` table header reads "الرقم الوظيفي" (grep confirmed "رقم القيد" is gone from that page). |

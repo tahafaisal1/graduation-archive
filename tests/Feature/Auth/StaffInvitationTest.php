@@ -1,5 +1,6 @@
 <?php
 
+use App\Mail\StaffInvitationMail;
 use App\Models\StaffInvitation;
 use App\Models\User;
 use Illuminate\Support\Facades\Schema;
@@ -31,4 +32,17 @@ test('issueFor replaces any prior invitation for the same user', function () {
     expect(StaffInvitation::where('user_id', $user->id)->count())->toBe(1);
     expect(StaffInvitation::where('token_hash', hash('sha256', $first))->exists())->toBeFalse();
     expect(StaffInvitation::where('token_hash', hash('sha256', $second))->exists())->toBeTrue();
+});
+
+test('the invitation mailable has the Arabic subject and renders the setup URL and inviter name', function () {
+    $invitee = User::factory()->create(['name' => 'Rania Saleh']);
+    $inviter = User::factory()->create(['name' => 'Admin Boss']);
+    $url = 'https://example.test/setup-password/abc123?email=rania%40x.test&expires=1&signature=x';
+
+    $mailable = new StaffInvitationMail($invitee, $inviter, $url);
+
+    $mailable->assertHasSubject('دعوة لإنشاء حسابك في منظومة أرشفة مشاريع التخرج');
+    $mailable->assertSeeInHtml('Admin Boss');
+    $mailable->assertSeeInHtml('إنشاء كلمة المرور');
+    $mailable->assertSeeInHtml($url);
 });

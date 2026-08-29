@@ -14,7 +14,7 @@ interface UserItem {
     id: number;
     name: string;
     email: string;
-    registration_number: string | null;
+    employee_number: string | null;
     department_id: number | null;
     department: Department | null;
     roles: UserRole[];
@@ -119,7 +119,7 @@ const createForm = useForm({
     name:                '',
     email:               '',
     password:            '',
-    registration_number: '',
+    employee_number: '',
     role:                '',
     department_id:       '' as string | number,
     is_active:           true,
@@ -145,7 +145,7 @@ const editForm = useForm({
     name:                '',
     email:               '',
     password:            '',
-    registration_number: '',
+    employee_number: '',
     role:                '',
     department_id:       '' as string | number,
 });
@@ -155,7 +155,7 @@ function openEdit(user: UserItem) {
     editForm.name            = user.name;
     editForm.email           = user.email;
     editForm.password        = '';
-    editForm.registration_number = user.registration_number ?? '';
+    editForm.employee_number = user.employee_number ?? '';
     editForm.role            = user.roles[0]?.name ?? '';
     editForm.department_id   = user.department_id ?? '';
     showEdit.value           = true;
@@ -220,7 +220,7 @@ function deleteUser() {
                 <input
                     v-model="search"
                     type="text"
-                    placeholder="البحث بالاسم أو البريد أو رقم القيد..."
+                    placeholder="البحث بالاسم أو البريد أو الرقم الوظيفي..."
                     class="min-w-60 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                     @input="onSearchInput"
                 />
@@ -274,7 +274,7 @@ function deleteUser() {
                             <th class="w-12 px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">#</th>
                             <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">الاسم</th>
                             <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">البريد الإلكتروني</th>
-                            <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">رقم القيد</th>
+                            <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">الرقم الوظيفي</th>
                             <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">القسم</th>
                             <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">الدور</th>
                             <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">الحالة</th>
@@ -297,7 +297,7 @@ function deleteUser() {
                                 {{ user.email }}
                             </td>
                             <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                                {{ user.registration_number ?? '—' }}
+                                {{ user.employee_number ?? '—' }}
                             </td>
                             <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                                 {{ user.department?.name ?? '—' }}
@@ -426,14 +426,14 @@ function deleteUser() {
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">رقم القيد</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">الرقم الوظيفي</label>
                     <input
-                        v-model="createForm.registration_number"
+                        v-model="createForm.employee_number"
                         type="text"
                         class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                        :class="{ 'border-red-500': createForm.errors.registration_number }"
+                        :class="{ 'border-red-500': createForm.errors.employee_number }"
                     />
-                    <p v-if="createForm.errors.registration_number" class="mt-1 text-xs text-red-600">{{ createForm.errors.registration_number }}</p>
+                    <p v-if="createForm.errors.employee_number" class="mt-1 text-xs text-red-600">{{ createForm.errors.employee_number }}</p>
                 </div>
 
                 <div>
@@ -533,14 +533,14 @@ function deleteUser() {
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">رقم القيد</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">الرقم الوظيفي</label>
                     <input
-                        v-model="editForm.registration_number"
+                        v-model="editForm.employee_number"
                         type="text"
                         class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                        :class="{ 'border-red-500': editForm.errors.registration_number }"
+                        :class="{ 'border-red-500': editForm.errors.employee_number }"
                     />
-                    <p v-if="editForm.errors.registration_number" class="mt-1 text-xs text-red-600">{{ editForm.errors.registration_number }}</p>
+                    <p v-if="editForm.errors.employee_number" class="mt-1 text-xs text-red-600">{{ editForm.errors.employee_number }}</p>
                 </div>
 
                 <div>

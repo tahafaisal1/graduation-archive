@@ -35,7 +35,9 @@ Phase 1 (Active Now):
 1. roles (Spatie) — 5 roles
 2. departments
 3. specializations
-4. users (+ registration_number field)
+4. users (+ employee_number field) — STAFF-ONLY table (students never log in; they live in
+   proposal_students.registration_number, a genuine student number). `employee_number` is the
+   college staff/employee number, distinct from the student registration number.
 5. proposals — the paper-approved form (title/description/dept/spec/supervisor/students/PDF);
    2-state lifecycle (مقترح/مؤرشف), never graded
 6. proposal_students (weak entity, with status/withdrawal) — belongs to a proposal, not a project
@@ -472,7 +474,7 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - ✅ All migrations created and finalized (14 migrations, column names aligned to spec)
 - ✅ Database connected to MariaDB (graduation_archive) — config cache issue resolved
 - ✅ All 9 Eloquent models created with fillable, casts, and relationships
-- ✅ User model updated — HasRoles trait, registration_number, department_id, is_active
+- ✅ User model updated — HasRoles trait, employee_number, department_id, is_active
 - ✅ Spatie RBAC seeded — 5 roles: super_admin, dept_manager, supervisor, dept_staff, viewer
 - ✅ ProjectStatus seeded — 10 statuses (archived → cancelled)
 - ✅ Admin user seeded — admin@admin.com / password / role: super_admin

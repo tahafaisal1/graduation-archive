@@ -165,7 +165,7 @@
 | email_verified_at | timestamp | Yes | null | Email verification timestamp |
 | password | varchar(255) | No | — | Hashed password |
 | remember_token | varchar(100) | Yes | null | Remember-me token |
-| registration_number | varchar(255), unique | Yes | null | College registration number |
+| employee_number | varchar(255), unique | Yes | null | Staff/employee number (college staff only) |
 | department_id | bigint unsigned, FK | Yes | null | FK to departments.id (nullOnDelete) |
 | is_active | boolean | No | true | Account active flag |
 | created_at | timestamp | Yes | null | — |
@@ -415,7 +415,7 @@ prior to the 2026-08-17 lifecycle scope-down and confirmed to have never been im
 
 - **Table:** users
 - **Traits:** HasFactory, Notifiable, HasRoles (Spatie)
-- **Fillable:** name, email, password, registration_number, department_id, is_active
+- **Fillable:** name, email, password, employee_number, department_id, is_active
 - **Hidden:** password, remember_token
 - **Casts:** email_verified_at (datetime), password (hashed), is_active (boolean)
 - **Relationships:**

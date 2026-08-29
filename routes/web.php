@@ -48,6 +48,8 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->name('admin.')
         ->only(['index', 'store', 'update', 'destroy']);
     Route::patch('users/{user}/toggle-active', [AdminUserController::class, 'toggleActive'])
         ->name('users.toggle-active');
+    Route::post('users/{user}/resend-invitation', [AdminUserController::class, 'resendInvitation'])
+        ->name('users.resend-invitation');
 });
 
 // super_admin + dept_manager — department view/edit (ownership enforced in controller for update/edit)

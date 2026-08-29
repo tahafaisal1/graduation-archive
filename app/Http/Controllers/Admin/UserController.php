@@ -50,21 +50,42 @@ class UserController extends Controller
     public function store(StoreUserRequest $request)
     {
         $validated = $request->validated();
-        $role = $validated['role'];
 
         $user = User::create([
-            'name'                => $validated['name'],
-            'email'               => $validated['email'],
-            'password'            => $validated['password'],
-            'employee_number'     => $validated['employee_number'] ?? null,
-            'department_id'       => $validated['department_id'] ?? null,
-            'is_active'           => $validated['is_active'] ?? true,
+            'name'            => $validated['name'],
+            'email'           => $validated['email'],
+            'password'        => null,
+            'employee_number' => $validated['employee_number'] ?? null,
+            'department_id'   => $validated['department_id'] ?? null,
+            'is_active'       => false,
         ]);
 
-        $user->assignRole($role);
+        $user->assignRole($validated['role']);
+
+        $this->sendInvitation($user, $request->user());
 
         return redirect()->route('admin.users.index')
-            ->with('success', 'تم إنشاء المستخدم بنجاح');
+            ->with('success', 'تم إنشاء المستخدم وإرسال دعوة إنشاء الحساب إلى بريده الإلكتروني');
+    }
+
+    public function resendInvitation(Request $request, User $user)
+    {
+        if ($user->password !== null) {
+            return back()->withErrors(['invitation' => 'هذا الحساب مُفعّل بالفعل ولا يحتاج إلى دعوة']);
+        }
+
+        $this->sendInvitation($user, $request->user());
+
+        return back()->with('success', 'تم إرسال دعوة جديدة إلى ' . $user->email);
+    }
+
+    protected function sendInvitation(User $user, User $inviter): void
+    {
+        $plain = \App\Models\StaffInvitation::issueFor($user);
+        $url = \App\Models\StaffInvitation::signedUrlFor($user, $plain);
+
+        \Illuminate\Support\Facades\Mail::to($user->email)
+            ->send(new \App\Mail\StaffInvitationMail($user, $inviter, $url));
     }
 
     public function update(UpdateUserRequest $request, User $user)

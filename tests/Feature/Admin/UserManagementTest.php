@@ -40,6 +40,7 @@ test('super_admin can filter users by role', function () {
 // ── 3. Create ─────────────────────────────────────────────────────────────────
 
 test('super_admin can create user with role', function () {
+    \Illuminate\Support\Facades\Mail::fake();
     $admin = userWithRole('super_admin');
     $dept  = Department::factory()->create();
 
@@ -47,10 +48,8 @@ test('super_admin can create user with role', function () {
         ->post(route('admin.users.store'), [
             'name'          => 'New Staff',
             'email'         => 'newstaff@test.com',
-            'password'      => 'password123',
             'role'          => 'dept_staff',
             'department_id' => $dept->id,
-            'is_active'     => true,
         ])
         ->assertRedirect(route('admin.users.index'))
         ->assertSessionHas('success');

@@ -1,8 +1,10 @@
 <?php
 
 use App\Mail\StaffInvitationMail;
+use App\Models\Department;
 use App\Models\StaffInvitation;
 use App\Models\User;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 
@@ -187,4 +189,79 @@ test('a deactivated user with a password cannot log in', function () {
     $this->post('/login', ['email' => 'off@test.local', 'password' => 'secret-pass-1'])
         ->assertSessionHasErrors('email');
     $this->assertGuest();
+});
+
+test('super_admin creating a user queues a signed invitation email and locks the account', function () {
+    Mail::fake();
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $admin = userWithRole('super_admin');
+    $dept = Department::factory()->create();
+
+    $this->actingAs($admin)->post(route('admin.users.store'), [
+        'name' => 'Fresh Staff', 'email' => 'fresh@test.local',
+        'employee_number' => 'EMP-777', 'role' => 'dept_manager', 'department_id' => $dept->id,
+    ])->assertRedirect(route('admin.users.index'))->assertSessionHas('success');
+
+    $user = User::where('email', 'fresh@test.local')->firstOrFail();
+    expect($user->password)->toBeNull();
+    expect((bool) $user->is_active)->toBeFalse();
+    expect($user->hasRole('dept_manager'))->toBeTrue();
+    expect(StaffInvitation::where('user_id', $user->id)->exists())->toBeTrue();
+
+    Mail::assertSent(StaffInvitationMail::class, function ($mail) use ($user) {
+        return $mail->hasTo($user->email)
+            && str_contains($mail->setupUrl, '/setup-password/')
+            && str_contains($mail->setupUrl, 'signature=');
+    });
+});
+
+test('creating a user with an existing email fails validation and creates nothing', function () {
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $admin = userWithRole('super_admin');
+    User::factory()->create(['email' => 'dupe@test.local']);
+
+    $this->actingAs($admin)->post(route('admin.users.store'), [
+        'name' => 'Dupe', 'email' => 'dupe@test.local', 'role' => 'viewer',
+    ])->assertSessionHasErrors('email');
+
+    expect(User::where('email', 'dupe@test.local')->count())->toBe(1);
+});
+
+test('resend-invitation issues a fresh token and invalidates the old one', function () {
+    Mail::fake();
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $admin = userWithRole('super_admin');
+    $user = User::factory()->create(['password' => null, 'is_active' => false]);
+    $user->assignRole('dept_staff');
+    $oldPlain = StaffInvitation::issueFor($user);
+    $oldUrl = StaffInvitation::signedUrlFor($user, $oldPlain);
+
+    $this->actingAs($admin)->post(route('admin.users.resend-invitation', $user))
+        ->assertRedirect()->assertSessionHas('success');
+
+    auth()->logout();
+    $this->get($oldUrl)->assertOk()->assertInertia(fn ($page) => $page->component('auth/InvitationInvalid'));
+    Mail::assertSent(StaffInvitationMail::class);
+});
+
+test('resend-invitation is rejected for an already-activated user', function () {
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $admin = userWithRole('super_admin');
+    $active = User::factory()->create();
+    $active->assignRole('viewer');
+
+    $this->actingAs($admin)->post(route('admin.users.resend-invitation', $active))
+        ->assertSessionHasErrors();
+});
+
+test('non-super_admin cannot create a user or resend an invitation', function () {
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $manager = userWithRole('dept_manager');
+    $target = User::factory()->create(['password' => null]);
+
+    $this->actingAs($manager)->post(route('admin.users.store'), [
+        'name' => 'x', 'email' => 'x@test.local', 'role' => 'viewer',
+    ])->assertForbidden();
+
+    $this->actingAs($manager)->post(route('admin.users.resend-invitation', $target))->assertForbidden();
 });

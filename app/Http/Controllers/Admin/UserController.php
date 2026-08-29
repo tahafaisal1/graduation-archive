@@ -21,7 +21,7 @@ class UserController extends Controller
                 $q->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                       ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhere('registration_number', 'like', "%{$search}%");
+                      ->orWhere('employee_number', 'like', "%{$search}%");
                 });
             })
             ->when($request->input('role'), fn ($q, $role) => $q->role($role))
@@ -56,7 +56,7 @@ class UserController extends Controller
             'name'                => $validated['name'],
             'email'               => $validated['email'],
             'password'            => $validated['password'],
-            'registration_number' => $validated['registration_number'] ?? null,
+            'employee_number'     => $validated['employee_number'] ?? null,
             'department_id'       => $validated['department_id'] ?? null,
             'is_active'           => $validated['is_active'] ?? true,
         ]);
@@ -74,7 +74,7 @@ class UserController extends Controller
         $updateData = [
             'name'                => $validated['name'],
             'email'               => $validated['email'],
-            'registration_number' => $validated['registration_number'] ?? null,
+            'employee_number'     => $validated['employee_number'] ?? null,
             'department_id'       => $validated['department_id'] ?? null,
         ];
 

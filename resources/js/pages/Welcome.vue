@@ -55,14 +55,6 @@ const features = [
                     >
                         لوحة التحكم
                     </Link>
-                    <template v-else>
-                        <Link
-                            :href="route('login')"
-                            class="inline-flex items-center px-5 py-2 rounded-lg border-2 border-primary text-primary font-body text-sm font-medium hover:bg-primary hover:text-white transition-colors"
-                        >
-                            تسجيل الدخول
-                        </Link>
-                    </template>
                 </div>
             </div>
         </header>
@@ -101,12 +93,6 @@ const features = [
                     >
                         تصفح المشاريع
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="rotate-180 shrink-0"><path d="m9 18 6-6-6-6"/></svg>
-                    </Link>
-                    <Link
-                        :href="route('login')"
-                        class="inline-flex items-center gap-2 px-7 py-3 rounded-lg border-2 border-white/30 text-white font-body font-medium text-base hover:border-white/60 hover:bg-primary/30 transition-colors"
-                    >
-                        تسجيل الدخول
                     </Link>
                 </div>
 
@@ -159,15 +145,15 @@ const features = [
         <!-- CTA BAND -->
         <section class="bg-primary py-14">
             <div class="max-w-xl mx-auto px-6 text-center">
-                <h2 class="font-display font-bold text-2xl text-white mb-3">جاهز للبدء؟</h2>
+                <h2 class="font-display font-bold text-2xl text-white mb-3">تصفّح أرشيف المشاريع</h2>
                 <p class="font-body text-white/80 mb-8 leading-relaxed">
-                    سجّل دخولك للوصول إلى الأرشيف الكامل وإدارة مشاريع التخرج.
+                    استعرض مشاريع التخرج المؤرشفة وابحث فيها بحسب القسم أو التخصص أو العام الدراسي.
                 </p>
                 <Link
-                    :href="route('login')"
+                    :href="route('public.browse')"
                     class="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-white text-primary font-body font-semibold text-base hover:bg-background transition-colors shadow-md"
                 >
-                    تسجيل الدخول الآن
+                    تصفح المشاريع
                 </Link>
             </div>
         </section>

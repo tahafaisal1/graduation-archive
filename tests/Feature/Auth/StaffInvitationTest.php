@@ -215,6 +215,27 @@ test('super_admin creating a user queues a signed invitation email and locks the
     });
 });
 
+test('a password submitted to admin user creation is ignored - the account stays locked', function () {
+    Mail::fake();
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $admin = userWithRole('super_admin');
+
+    $this->actingAs($admin)->post(route('admin.users.store'), [
+        'name' => 'Sneaky', 'email' => 'sneaky@test.local', 'role' => 'viewer',
+        'password' => 'admin-knows-this-1', 'password_confirmation' => 'admin-knows-this-1',
+        'is_active' => true,
+    ])->assertRedirect(route('admin.users.index'));
+
+    $user = User::where('email', 'sneaky@test.local')->firstOrFail();
+    expect($user->password)->toBeNull();
+    expect((bool) $user->is_active)->toBeFalse();
+
+    auth()->logout();
+    $this->post('/login', ['email' => 'sneaky@test.local', 'password' => 'admin-knows-this-1'])
+        ->assertSessionHasErrors('email');
+    $this->assertGuest();
+});
+
 test('creating a user with an existing email fails validation and creates nothing', function () {
     $this->seed(\Database\Seeders\RoleSeeder::class);
     $admin = userWithRole('super_admin');

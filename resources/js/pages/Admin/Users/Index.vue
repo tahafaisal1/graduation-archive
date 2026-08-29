@@ -19,6 +19,7 @@ interface UserItem {
     department: Department | null;
     roles: UserRole[];
     is_active: boolean;
+    has_password: boolean;
     created_at: string;
 }
 
@@ -116,18 +117,15 @@ const hasFilters = computed(
 const showCreate = ref(false);
 
 const createForm = useForm({
-    name:                '',
-    email:               '',
-    password:            '',
+    name:            '',
+    email:           '',
     employee_number: '',
-    role:                '',
-    department_id:       '' as string | number,
-    is_active:           true,
+    role:            '',
+    department_id:   '' as string | number,
 });
 
 function openCreate() {
     createForm.reset();
-    createForm.is_active = true;
     showCreate.value = true;
 }
 
@@ -173,6 +171,11 @@ function toggleActive(user: UserItem) {
     router.patch(route('admin.users.toggle-active', user.id), {}, { preserveScroll: true });
 }
 
+// ── Resend invitation ───────────────────────────────────────────────────
+function resendInvite(user: UserItem) {
+    router.post(route('admin.users.resend-invitation', user.id), {}, { preserveScroll: true });
+}
+
 // ── Delete ──────────────────────────────────────────────────────────────
 const confirmDelete = ref<UserItem | null>(null);
 
@@ -197,7 +200,7 @@ function deleteUser() {
                     class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                     @click="openCreate"
                 >
-                    + إضافة مستخدم
+                    + إضافة موظف جديد
                 </button>
             </div>
 
@@ -312,6 +315,13 @@ function deleteUser() {
                             </td>
                             <td class="px-4 py-3 text-sm">
                                 <span
+                                    v-if="!user.has_password"
+                                    class="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+                                >
+                                    بانتظار التفعيل
+                                </span>
+                                <span
+                                    v-else
                                     :class="user.is_active
                                         ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
                                         : 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400'"
@@ -323,6 +333,15 @@ function deleteUser() {
                             <td class="px-4 py-3">
                                 <div class="flex gap-2">
                                     <button
+                                        v-if="!user.has_password"
+                                        type="button"
+                                        class="rounded bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200 dark:bg-blue-900/20 dark:text-blue-400"
+                                        @click="resendInvite(user)"
+                                    >
+                                        إعادة إرسال الدعوة
+                                    </button>
+                                    <button
+                                        v-if="user.has_password"
                                         type="button"
                                         class="rounded bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400"
                                         @click="openEdit(user)"
@@ -330,6 +349,7 @@ function deleteUser() {
                                         تعديل
                                     </button>
                                     <button
+                                        v-if="user.has_password"
                                         type="button"
                                         :class="user.is_active
                                             ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400'
@@ -389,7 +409,7 @@ function deleteUser() {
         </div>
 
         <!-- ── CreateUserModal ─────────────────────────────────── -->
-        <Modal :show="showCreate" title="إضافة مستخدم جديد" @close="showCreate = false">
+        <Modal :show="showCreate" title="إضافة موظف جديد" @close="showCreate = false">
             <form id="create-user-form" class="space-y-4" @submit.prevent="submitCreate">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">الاسم</label>
@@ -412,17 +432,6 @@ function deleteUser() {
                         :class="{ 'border-red-500': createForm.errors.email }"
                     />
                     <p v-if="createForm.errors.email" class="mt-1 text-xs text-red-600">{{ createForm.errors.email }}</p>
-                </div>
-
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">كلمة المرور</label>
-                    <input
-                        v-model="createForm.password"
-                        type="password"
-                        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                        :class="{ 'border-red-500': createForm.errors.password }"
-                    />
-                    <p v-if="createForm.errors.password" class="mt-1 text-xs text-red-600">{{ createForm.errors.password }}</p>
                 </div>
 
                 <div>
@@ -462,15 +471,9 @@ function deleteUser() {
                     <p v-if="createForm.errors.department_id" class="mt-1 text-xs text-red-600">{{ createForm.errors.department_id }}</p>
                 </div>
 
-                <div class="flex items-center gap-2">
-                    <input
-                        id="create-is-active"
-                        v-model="createForm.is_active"
-                        type="checkbox"
-                        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <label for="create-is-active" class="text-sm text-gray-700 dark:text-gray-300">نشط عند الإنشاء</label>
-                </div>
+                <p class="rounded-lg bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                    سيتم إرسال دعوة عبر البريد الإلكتروني تتيح للموظف تعيين كلمة المرور وتفعيل حسابه. لا يتم تعيين كلمة مرور يدوياً.
+                </p>
             </form>
 
             <template #footer>

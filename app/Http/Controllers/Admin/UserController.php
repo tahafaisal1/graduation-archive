@@ -30,9 +30,16 @@ class UserController extends Controller
 
         $paginated = $query->orderBy('name')->paginate(15)->withQueryString();
 
+        $items = collect($paginated->items())->map(function (User $u) {
+            $arr = $u->toArray();
+            $arr['has_password'] = $u->password !== null;
+
+            return $arr;
+        })->all();
+
         return Inertia::render('Admin/Users/Index', [
             'users' => [
-                'data'  => $paginated->items(),
+                'data'  => $items,
                 'links' => $paginated->linkCollection()->toArray(),
                 'meta'  => [
                     'current_page' => $paginated->currentPage(),

@@ -254,6 +254,24 @@ test('resend-invitation is rejected for an already-activated user', function () 
         ->assertSessionHasErrors();
 });
 
+test('the admin users index exposes has_password so the UI can show pending accounts', function () {
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $admin = userWithRole('super_admin');
+    $pending = User::factory()->create(['password' => null, 'email' => 'pending@test.local']);
+    $pending->assignRole('viewer');
+
+    $this->actingAs($admin)->get(route('admin.users.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('users.data', fn ($rows) => collect($rows)->contains(
+                fn ($r) => $r['email'] === 'pending@test.local' && $r['has_password'] === false
+            ))
+            ->where('users.data', fn ($rows) => collect($rows)->contains(
+                fn ($r) => $r['email'] === $admin->email && $r['has_password'] === true
+            ))
+        );
+});
+
 test('non-super_admin cannot create a user or resend an invitation', function () {
     $this->seed(\Database\Seeders\RoleSeeder::class);
     $manager = userWithRole('dept_manager');

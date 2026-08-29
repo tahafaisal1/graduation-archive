@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Department;
 use App\Models\Proposal;
 use App\Models\User;
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -66,6 +67,41 @@ class SearchService
         }
 
         return $query->limit(5)->get();
+    }
+
+    /**
+     * OR-match a Proposal query across title, description, academic_year,
+     * student names, supervisor name, department name, specialization name.
+     * $term must already be trimmed + mb_strtolower'd.
+     */
+    public function proposalTextMatch(Builder $query, string $term): Builder
+    {
+        $like = '%' . $term . '%';
+
+        return $query->where(function (Builder $q) use ($like) {
+            $q->whereRaw('LOWER(proposals.title) LIKE ?', [$like])
+              ->orWhereRaw('LOWER(proposals.description) LIKE ?', [$like])
+              ->orWhereRaw('LOWER(proposals.academic_year) LIKE ?', [$like])
+              ->orWhereHas('students', fn (Builder $s) => $s->whereRaw('LOWER(proposal_students.full_name) LIKE ?', [$like]))
+              ->orWhereHas('supervisor', fn (Builder $u) => $u->whereRaw('LOWER(users.name) LIKE ?', [$like]))
+              ->orWhereHas('department', fn (Builder $d) => $d->whereRaw('LOWER(departments.name) LIKE ?', [$like]))
+              ->orWhereHas('specialization', fn (Builder $sp) => $sp->whereRaw('LOWER(specializations.name) LIKE ?', [$like]));
+        });
+    }
+
+    /**
+     * OR-match a Project query across everything proposalTextMatch covers
+     * (via the linked proposal) plus assigned examiner names.
+     * $term must already be trimmed + mb_strtolower'd.
+     */
+    public function projectTextMatch(Builder $projectQuery, string $term): void
+    {
+        $like = '%' . $term . '%';
+
+        $projectQuery->where(function (Builder $q) use ($term, $like) {
+            $q->whereHas('proposal', fn (Builder $p) => $this->proposalTextMatch($p, $term))
+              ->orWhereHas('examiners', fn (Builder $e) => $e->whereRaw('LOWER(examiners.full_name) LIKE ?', [$like]));
+        });
     }
 
     public function getFilterOptions(): array

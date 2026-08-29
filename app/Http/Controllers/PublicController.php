@@ -12,6 +12,8 @@ use Inertia\Response;
 
 class PublicController extends Controller
 {
+    public function __construct(private readonly \App\Services\SearchService $search) {}
+
     public function index(): Response
     {
         $stats = [
@@ -30,11 +32,8 @@ class PublicController extends Controller
             ->where('is_deleted', false)
             ->with(['proposal.department', 'proposal.specialization']);
 
-        if ($search = $request->input('search')) {
-            $query->whereHas('proposal', function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
-            });
+        if ($search = trim((string) $request->input('search'))) {
+            $this->search->projectTextMatch($query, mb_strtolower($search));
         }
 
         if ($deptId = $request->input('department_id')) {

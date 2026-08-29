@@ -135,7 +135,6 @@ class SearchService
             ->with([
                 'proposal.department:id,name', 'proposal.specialization:id,name',
                 'proposal.supervisor:id,name', 'proposal.students:id,proposal_id,full_name',
-                'status:id,status_name',
             ]);
 
         if ($term !== '') {

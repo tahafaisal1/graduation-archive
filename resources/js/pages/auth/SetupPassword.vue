@@ -23,7 +23,6 @@ const roleLabels: Record<string, string> = {
 };
 
 const form = useForm({
-    email: props.email,
     password: '',
     password_confirmation: '',
 });

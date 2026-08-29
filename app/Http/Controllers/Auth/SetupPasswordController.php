@@ -48,14 +48,23 @@ class SetupPasswordController extends Controller
 
         $user = $invitation->user;
 
+        // Atomically claim the invitation: only one concurrent request can flip
+        // used_at from NULL. A lost race gets the friendly invalid page and never
+        // sets a password.
+        $claimed = StaffInvitation::where('id', $invitation->id)
+            ->whereNull('used_at')
+            ->update(['used_at' => now()]);
+
+        if ($claimed === 0) {
+            return Inertia::render('auth/InvitationInvalid');
+        }
+
         $user->forceFill([
             'password' => Hash::make($request->validated()['password']),
             'is_active' => true,
             'email_verified_at' => now(),
             'remember_token' => Str::random(60),
         ])->save();
-
-        $invitation->forceFill(['used_at' => now()])->save();
 
         Log::info('staff setup-password succeeded', ['user_id' => $user->id, 'ip' => $request->ip()]);
 

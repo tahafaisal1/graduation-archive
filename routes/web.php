@@ -1,16 +1,15 @@
 <?php
 
 use App\Http\Controllers\Admin\UserController as AdminUserController;
-use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
-use App\Http\Controllers\PublicController;
-use App\Http\Controllers\ReportController;
 use App\Http\Controllers\EvaluationController;
 use App\Http\Controllers\ExaminerController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectExaminerController;
 use App\Http\Controllers\ProposalController;
+use App\Http\Controllers\PublicController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SpecializationController;
 use Illuminate\Support\Facades\Route;
@@ -33,12 +32,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // Reports — dept_manager + super_admin
 Route::middleware(['auth', 'role:dept_manager,super_admin'])->prefix('reports')->name('reports.')->group(function () {
-    Route::get('/department',      [ReportController::class, 'departmentReport'])    ->name('department');
+    Route::get('/department', [ReportController::class, 'departmentReport'])->name('department');
     Route::get('/specializations', [ReportController::class, 'specializationReport'])->name('specializations');
-    Route::get('/supervisors',     [ReportController::class, 'supervisorReport'])    ->name('supervisors');
-    Route::get('/yearly',          [ReportController::class, 'yearlyReport'])        ->name('yearly');
-    Route::get('/export/pdf',      [ReportController::class, 'exportPdf'])           ->name('export.pdf');
-    Route::get('/export/excel',    [ReportController::class, 'exportExcel'])         ->name('export.excel');
+    Route::get('/supervisors', [ReportController::class, 'supervisorReport'])->name('supervisors');
+    Route::get('/yearly', [ReportController::class, 'yearlyReport'])->name('yearly');
+    Route::get('/export/pdf', [ReportController::class, 'exportPdf'])->name('export.pdf');
+    Route::get('/export/excel', [ReportController::class, 'exportExcel'])->name('export.excel');
 });
 
 // super_admin only

@@ -4,6 +4,8 @@ use App\Mail\StaffInvitationMail;
 use App\Models\Department;
 use App\Models\StaffInvitation;
 use App\Models\User;
+use Database\Seeders\RoleSeeder;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
@@ -58,7 +60,7 @@ test('the invitation mailable has the Arabic subject and renders the setup URL a
 });
 
 test('GET setup-password renders the form for a valid unused token', function () {
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $user = User::factory()->create(['password' => null, 'is_active' => false, 'name' => 'Nadia F']);
     $user->assignRole('dept_staff');
 
@@ -121,7 +123,7 @@ test('the setup route is not reachable by an authenticated session', function ()
 });
 
 test('a valid submit sets the password, activates the user, marks the token used, and logs in', function () {
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $user = User::factory()->create(['password' => null, 'is_active' => false, 'name' => 'Sami K']);
     $user->assignRole('supervisor');
     $plain = StaffInvitation::issueFor($user);
@@ -142,7 +144,7 @@ test('a valid submit sets the password, activates the user, marks the token used
 });
 
 test('reusing the URL after a successful setup shows the error page and does not re-login', function () {
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $user = User::factory()->create(['password' => null, 'is_active' => false]);
     $user->assignRole('dept_staff');
     $plain = StaffInvitation::issueFor($user);
@@ -182,7 +184,7 @@ test('the invited user cannot log in before completing setup', function () {
 test('a deactivated user with a password cannot log in', function () {
     User::factory()->create([
         'email' => 'off@test.local',
-        'password' => \Illuminate\Support\Facades\Hash::make('secret-pass-1'),
+        'password' => Hash::make('secret-pass-1'),
         'is_active' => false,
     ]);
 
@@ -193,7 +195,7 @@ test('a deactivated user with a password cannot log in', function () {
 
 test('super_admin creating a user queues a signed invitation email and locks the account', function () {
     Mail::fake();
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $admin = userWithRole('super_admin');
     $dept = Department::factory()->create();
 
@@ -217,7 +219,7 @@ test('super_admin creating a user queues a signed invitation email and locks the
 
 test('a password submitted to admin user creation is ignored - the account stays locked', function () {
     Mail::fake();
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $admin = userWithRole('super_admin');
 
     $this->actingAs($admin)->post(route('admin.users.store'), [
@@ -237,7 +239,7 @@ test('a password submitted to admin user creation is ignored - the account stays
 });
 
 test('creating a user with an existing email fails validation and creates nothing', function () {
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $admin = userWithRole('super_admin');
     User::factory()->create(['email' => 'dupe@test.local']);
 
@@ -250,7 +252,7 @@ test('creating a user with an existing email fails validation and creates nothin
 
 test('resend-invitation issues a fresh token and invalidates the old one', function () {
     Mail::fake();
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $admin = userWithRole('super_admin');
     $user = User::factory()->create(['password' => null, 'is_active' => false]);
     $user->assignRole('dept_staff');
@@ -266,7 +268,7 @@ test('resend-invitation issues a fresh token and invalidates the old one', funct
 });
 
 test('resend-invitation is rejected for an already-activated user', function () {
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $admin = userWithRole('super_admin');
     $active = User::factory()->create();
     $active->assignRole('viewer');
@@ -276,7 +278,7 @@ test('resend-invitation is rejected for an already-activated user', function () 
 });
 
 test('the admin users index exposes has_password so the UI can show pending accounts', function () {
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $admin = userWithRole('super_admin');
     $pending = User::factory()->create(['password' => null, 'email' => 'pending@test.local']);
     $pending->assignRole('viewer');
@@ -294,7 +296,7 @@ test('the admin users index exposes has_password so the UI can show pending acco
 });
 
 test('non-super_admin cannot create a user or resend an invitation', function () {
-    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $this->seed(RoleSeeder::class);
     $manager = userWithRole('dept_manager');
     $target = User::factory()->create(['password' => null]);
 

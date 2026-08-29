@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
+use App\Mail\StaffInvitationMail;
 use App\Models\Department;
+use App\Models\StaffInvitation;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -20,8 +23,8 @@ class UserController extends Controller
             ->when($request->input('search'), function ($q, $search) {
                 $q->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhere('employee_number', 'like', "%{$search}%");
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('employee_number', 'like', "%{$search}%");
                 });
             })
             ->when($request->input('role'), fn ($q, $role) => $q->role($role))
@@ -39,18 +42,18 @@ class UserController extends Controller
 
         return Inertia::render('Admin/Users/Index', [
             'users' => [
-                'data'  => $items,
+                'data' => $items,
                 'links' => $paginated->linkCollection()->toArray(),
-                'meta'  => [
+                'meta' => [
                     'current_page' => $paginated->currentPage(),
-                    'last_page'    => $paginated->lastPage(),
-                    'total'        => $paginated->total(),
-                    'per_page'     => $paginated->perPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'total' => $paginated->total(),
+                    'per_page' => $paginated->perPage(),
                 ],
             ],
-            'roles'       => Role::orderBy('name')->pluck('name'),
+            'roles' => Role::orderBy('name')->pluck('name'),
             'departments' => Department::orderBy('name')->get(['id', 'name']),
-            'filters'     => $request->only(['search', 'role', 'department_id', 'is_active']),
+            'filters' => $request->only(['search', 'role', 'department_id', 'is_active']),
         ]);
     }
 
@@ -59,12 +62,12 @@ class UserController extends Controller
         $validated = $request->validated();
 
         $user = User::create([
-            'name'            => $validated['name'],
-            'email'           => $validated['email'],
-            'password'        => null,
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => null,
             'employee_number' => $validated['employee_number'] ?? null,
-            'department_id'   => $validated['department_id'] ?? null,
-            'is_active'       => false,
+            'department_id' => $validated['department_id'] ?? null,
+            'is_active' => false,
         ]);
 
         $user->assignRole($validated['role']);
@@ -83,16 +86,16 @@ class UserController extends Controller
 
         $this->sendInvitation($user, $request->user());
 
-        return back()->with('success', 'تم إرسال دعوة جديدة إلى ' . $user->email);
+        return back()->with('success', 'تم إرسال دعوة جديدة إلى '.$user->email);
     }
 
     protected function sendInvitation(User $user, User $inviter): void
     {
-        $plain = \App\Models\StaffInvitation::issueFor($user);
-        $url = \App\Models\StaffInvitation::signedUrlFor($user, $plain);
+        $plain = StaffInvitation::issueFor($user);
+        $url = StaffInvitation::signedUrlFor($user, $plain);
 
-        \Illuminate\Support\Facades\Mail::to($user->email)
-            ->send(new \App\Mail\StaffInvitationMail($user, $inviter, $url));
+        Mail::to($user->email)
+            ->send(new StaffInvitationMail($user, $inviter, $url));
     }
 
     public function update(UpdateUserRequest $request, User $user)
@@ -100,13 +103,13 @@ class UserController extends Controller
         $validated = $request->validated();
 
         $updateData = [
-            'name'                => $validated['name'],
-            'email'               => $validated['email'],
-            'employee_number'     => $validated['employee_number'] ?? null,
-            'department_id'       => $validated['department_id'] ?? null,
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'employee_number' => $validated['employee_number'] ?? null,
+            'department_id' => $validated['department_id'] ?? null,
         ];
 
-        if (!empty($validated['password'])) {
+        if (! empty($validated['password'])) {
             $updateData['password'] = $validated['password'];
         }
 
@@ -119,7 +122,7 @@ class UserController extends Controller
 
     public function toggleActive(User $user)
     {
-        $newActive = !$user->is_active;
+        $newActive = ! $user->is_active;
         $user->update(['is_active' => $newActive]);
 
         return redirect()->back()

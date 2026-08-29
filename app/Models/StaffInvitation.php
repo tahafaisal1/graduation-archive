@@ -17,7 +17,7 @@ class StaffInvitation extends Model
     {
         return [
             'expires_at' => 'datetime',
-            'used_at'    => 'datetime',
+            'used_at' => 'datetime',
         ];
     }
 
@@ -37,10 +37,10 @@ class StaffInvitation extends Model
         $plain = Str::random(64);
 
         static::create([
-            'user_id'    => $user->id,
+            'user_id' => $user->id,
             'token_hash' => hash('sha256', $plain),
             'expires_at' => now()->addHours(24),
-            'used_at'    => null,
+            'used_at' => null,
         ]);
 
         return $plain;

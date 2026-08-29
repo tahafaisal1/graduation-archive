@@ -27,13 +27,13 @@ class SetupPasswordController extends Controller
         $user = $invitation->user;
 
         return Inertia::render('auth/SetupPassword', [
-            'token'     => $token,
-            'email'     => $user->email,
+            'token' => $token,
+            'email' => $user->email,
             'submitUrl' => $request->fullUrl(),
-            'user'      => [
-                'name'  => $user->name,
+            'user' => [
+                'name' => $user->name,
                 'email' => $user->email,
-                'role'  => $user->getRoleNames()->first(),
+                'role' => $user->getRoleNames()->first(),
             ],
         ]);
     }
@@ -49,10 +49,10 @@ class SetupPasswordController extends Controller
         $user = $invitation->user;
 
         $user->forceFill([
-            'password'          => Hash::make($request->validated()['password']),
-            'is_active'         => true,
+            'password' => Hash::make($request->validated()['password']),
+            'is_active' => true,
             'email_verified_at' => now(),
-            'remember_token'    => Str::random(60),
+            'remember_token' => Str::random(60),
         ])->save();
 
         $invitation->forceFill(['used_at' => now()])->save();
@@ -78,10 +78,10 @@ class SetupPasswordController extends Controller
 
         $fail = function (string $outcome, ?int $userId = null) use ($ip, $stage): null {
             Log::warning('staff setup-password attempt failed', [
-                'stage'   => $stage,
+                'stage' => $stage,
                 'outcome' => $outcome,
                 'user_id' => $userId,
-                'ip'      => $ip,
+                'ip' => $ip,
             ]);
 
             return null;

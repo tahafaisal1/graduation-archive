@@ -33,7 +33,7 @@ class StaffInvitationMail extends Mailable
             with: [
                 'inviteeName' => $this->invitee->name,
                 'inviterName' => $this->inviter->name,
-                'setupUrl'    => $this->setupUrl,
+                'setupUrl' => $this->setupUrl,
             ],
         );
     }

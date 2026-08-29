@@ -19,17 +19,18 @@ beforeEach(function () {
 });
 
 /** Build an archived Project whose proposal carries the given attributes. */
-function makeArchivedProject(array $proposalOverrides = [], ?User $supervisor = null): Project {
+function makeArchivedProject(array $proposalOverrides = [], ?User $supervisor = null): Project
+{
     $dept = Department::factory()->create();
     $spec = Specialization::factory()->create(['department_id' => $dept->id]);
     $supervisor ??= userWithRole('supervisor');
 
     $proposal = Proposal::factory()->create(array_merge([
-        'department_id'     => $dept->id,
+        'department_id' => $dept->id,
         'specialization_id' => $spec->id,
-        'supervisor_id'     => $supervisor->id,
-        'status_id'         => Proposal::STATUS_ARCHIVED,
-        'is_deleted'        => false,
+        'supervisor_id' => $supervisor->id,
+        'status_id' => Proposal::STATUS_ARCHIVED,
+        'is_deleted' => false,
     ], $proposalOverrides));
 
     $project = $proposal->instantiateProject($supervisor);
@@ -79,7 +80,7 @@ test('internal search finds a project by a student name only', function () {
 
 test('internal search finds a project by an examiner name only', function () {
     $project = makeArchivedProject(['title' => 'Thermal Camera']);
-    $examiner = \App\Models\Examiner::factory()->create(['full_name' => 'Dr Munir Alraqi']);
+    $examiner = Examiner::factory()->create(['full_name' => 'Dr Munir Alraqi']);
     $project->examiners()->attach($examiner->id);
     makeArchivedProject(['title' => 'Decoy']);
 

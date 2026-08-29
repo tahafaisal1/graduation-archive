@@ -14,11 +14,11 @@ class StoreUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'            => ['required', 'string', 'max:100'],
-            'email'           => ['required', 'email', 'unique:users,email'],
+            'name' => ['required', 'string', 'max:100'],
+            'email' => ['required', 'email', 'unique:users,email'],
             'employee_number' => ['nullable', 'string', 'unique:users,employee_number'],
-            'role'            => ['required', 'in:super_admin,dept_manager,supervisor,dept_staff,viewer'],
-            'department_id'   => ['nullable', 'exists:departments,id'],
+            'role' => ['required', 'in:super_admin,dept_manager,supervisor,dept_staff,viewer'],
+            'department_id' => ['nullable', 'exists:departments,id'],
         ];
     }
 }

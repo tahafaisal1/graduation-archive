@@ -49,6 +49,15 @@ class LoginRequest extends FormRequest
             ]);
         }
 
+        if (! Auth::user()->is_active) {
+            Auth::logout();
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => 'هذا الحساب غير مُفعّل. يرجى إكمال دعوة إنشاء الحساب أو التواصل مع مدير المنظومة.',
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey());
     }
 

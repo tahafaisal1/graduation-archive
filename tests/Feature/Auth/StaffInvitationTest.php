@@ -117,3 +117,74 @@ test('the setup route is not reachable by an authenticated session', function ()
 
     $this->actingAs(User::factory()->create())->get($url)->assertRedirect(route('dashboard'));
 });
+
+test('a valid submit sets the password, activates the user, marks the token used, and logs in', function () {
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $user = User::factory()->create(['password' => null, 'is_active' => false, 'name' => 'Sami K']);
+    $user->assignRole('supervisor');
+    $plain = StaffInvitation::issueFor($user);
+    $url = StaffInvitation::signedUrlFor($user, $plain);
+
+    $this->post($url, [
+        'email' => $user->email,
+        'password' => 'Str0ng-pass-9',
+        'password_confirmation' => 'Str0ng-pass-9',
+    ])->assertRedirect(route('dashboard'));
+
+    $user->refresh();
+    expect($user->password)->not->toBeNull();
+    expect($user->is_active)->toBeTrue();
+    expect($user->email_verified_at)->not->toBeNull();
+    expect(StaffInvitation::where('user_id', $user->id)->first()->used_at)->not->toBeNull();
+    $this->assertAuthenticatedAs($user);
+});
+
+test('reusing the URL after a successful setup shows the error page and does not re-login', function () {
+    $this->seed(\Database\Seeders\RoleSeeder::class);
+    $user = User::factory()->create(['password' => null, 'is_active' => false]);
+    $user->assignRole('dept_staff');
+    $plain = StaffInvitation::issueFor($user);
+    $url = StaffInvitation::signedUrlFor($user, $plain);
+
+    $this->post($url, ['email' => $user->email, 'password' => 'Str0ng-pass-9', 'password_confirmation' => 'Str0ng-pass-9']);
+    auth()->logout();
+
+    $this->get($url)->assertOk()->assertInertia(fn ($page) => $page->component('auth/InvitationInvalid'));
+    $this->post($url, ['email' => $user->email, 'password' => 'Another-pass-1', 'password_confirmation' => 'Another-pass-1'])
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('auth/InvitationInvalid'));
+    $this->assertGuest();
+});
+
+test('the setup POST is rate limited to 5 per hour per IP', function () {
+    $user = User::factory()->create(['password' => null]);
+    $plain = StaffInvitation::issueFor($user);
+    $url = StaffInvitation::signedUrlFor($user, $plain);
+    StaffInvitation::where('user_id', $user->id)->update(['used_at' => now()]);
+
+    foreach (range(1, 5) as $i) {
+        $this->post($url, ['email' => $user->email, 'password' => 'Str0ng-pass-9', 'password_confirmation' => 'Str0ng-pass-9']);
+    }
+    $this->post($url, ['email' => $user->email, 'password' => 'Str0ng-pass-9', 'password_confirmation' => 'Str0ng-pass-9'])
+        ->assertStatus(429);
+});
+
+test('the invited user cannot log in before completing setup', function () {
+    User::factory()->create(['password' => null, 'is_active' => false, 'email' => 'locked@test.local']);
+
+    $this->post('/login', ['email' => 'locked@test.local', 'password' => 'anything'])
+        ->assertSessionHasErrors('email');
+    $this->assertGuest();
+});
+
+test('a deactivated user with a password cannot log in', function () {
+    User::factory()->create([
+        'email' => 'off@test.local',
+        'password' => \Illuminate\Support\Facades\Hash::make('secret-pass-1'),
+        'is_active' => false,
+    ]);
+
+    $this->post('/login', ['email' => 'off@test.local', 'password' => 'secret-pass-1'])
+        ->assertSessionHasErrors('email');
+    $this->assertGuest();
+});

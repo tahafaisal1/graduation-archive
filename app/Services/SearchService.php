@@ -3,11 +3,12 @@
 namespace App\Services;
 
 use App\Models\Department;
+use App\Models\Project;
 use App\Models\Proposal;
 use App\Models\User;
 use Illuminate\Contracts\Database\Eloquent\Builder;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class SearchService
 {
@@ -102,6 +103,74 @@ class SearchService
             $q->whereHas('proposal', fn (Builder $p) => $this->proposalTextMatch($p, $term))
               ->orWhereHas('examiners', fn (Builder $e) => $e->whereRaw('LOWER(examiners.full_name) LIKE ?', [$like]));
         });
+    }
+
+    public function searchInternal(array $filters): LengthAwarePaginator
+    {
+        $term = isset($filters['search']) ? mb_strtolower(trim((string) $filters['search'])) : '';
+
+        $proposalRows = Proposal::query()
+            ->where('is_deleted', false)
+            ->where('status_id', Proposal::STATUS_PENDING)
+            ->with(['department:id,name', 'specialization:id,name', 'supervisor:id,name', 'students:id,proposal_id,full_name'])
+            ->when($term !== '', fn ($q) => $this->proposalTextMatch($q, $term))
+            ->get()
+            ->map(fn (Proposal $p) => [
+                'type'          => 'proposal',
+                'entity_label'  => 'مقترح',
+                'route'         => 'proposals.show',
+                'route_id'      => $p->id,
+                'title'         => $p->title,
+                'description'   => $p->description,
+                'academic_year' => $p->academic_year,
+                'department'    => $p->department?->name,
+                'specialization'=> $p->specialization?->name,
+                'supervisor'    => $p->supervisor?->name,
+                'students'      => $p->students->pluck('full_name')->all(),
+                'created_at'    => $p->created_at?->toIso8601String(),
+            ]);
+
+        $projectQuery = Project::query()
+            ->where('is_deleted', false)
+            ->with([
+                'proposal.department:id,name', 'proposal.specialization:id,name',
+                'proposal.supervisor:id,name', 'proposal.students:id,proposal_id,full_name',
+                'status:id,status_name',
+            ]);
+
+        if ($term !== '') {
+            $this->projectTextMatch($projectQuery, $term);
+        }
+
+        $projectRows = $projectQuery->get()->map(fn (Project $project) => [
+            'type'           => 'project',
+            'entity_label'   => $project->status_id === Project::STATUS_ARCHIVED ? 'مشروع مؤرشف' : 'مشروع قيد التنفيذ',
+            'route'          => 'projects.show',
+            'route_id'       => $project->id,
+            'title'          => $project->proposal->title,
+            'description'    => $project->proposal->description,
+            'academic_year'  => $project->proposal->academic_year,
+            'department'     => $project->proposal->department?->name,
+            'specialization' => $project->proposal->specialization?->name,
+            'supervisor'     => $project->proposal->supervisor?->name,
+            'students'       => $project->proposal->students->pluck('full_name')->all(),
+            'created_at'     => $project->created_at?->toIso8601String(),
+        ]);
+
+        $merged = $proposalRows->concat($projectRows)
+            ->sortByDesc('created_at')
+            ->values();
+
+        $perPage = 15;
+        $page = LengthAwarePaginator::resolveCurrentPage();
+
+        return new LengthAwarePaginator(
+            $merged->forPage($page, $perPage)->values(),
+            $merged->count(),
+            $perPage,
+            $page,
+            ['path' => LengthAwarePaginator::resolveCurrentPath(), 'query' => $filters]
+        );
     }
 
     public function getFilterOptions(): array

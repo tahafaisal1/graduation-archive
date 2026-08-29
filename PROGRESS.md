@@ -31,6 +31,33 @@
 
 ### Major Changes
 
+- **2026-08-29 — Phase 1 Closeout (5 fixes).** (1) `Welcome.vue` — every login CTA removed
+  (`/login` still reachable by URL). (2) `AppSidebar.vue` — "تصفح المشاريع" removed from all role
+  menus. (3) **Expanded search** — `SearchService::proposalTextMatch()` / `projectTextMatch()`
+  OR-match title/description/academic_year/student name/supervisor name/examiner name/department
+  name/specialization name (`LOWER(col) LIKE`, term trimmed + `mb_strtolower`'d server-side);
+  `PublicController::browse()` uses `projectTextMatch` (still archived-projects-only); new
+  `SearchService::searchInternal()` powers `/search` by merging a pending-proposals query with an
+  all-non-deleted-projects query into one manually-built `LengthAwarePaginator` of normalized rows
+  ({type, entity_label "مقترح"/"مشروع قيد التنفيذ"/"مشروع مؤرشف", route, route_id, …});
+  `Search/Index.vue` renders the flat badged list. `detectSimilarity()` stays title-only.
+  (4) **`users.registration_number` → `users.employee_number`** — standalone reversible migration
+  `2026_08_29_000100_...`; `users` is staff-only, distinct from the untouched
+  `proposal_students.registration_number`. `UserFactory` now emits `employee_number`.
+  (5) **Invite-only account creation** — new `staff_invitations` table (sha256-hashed single-use
+  token, see Section 2); `users.password` made nullable (`2026_08_29_000300_...`).
+  `Admin\UserController::store()` creates the user with `password` NULL + `is_active` false and
+  emails a `URL::temporarySignedRoute` link (`/setup-password/{token}?email=…`, 24h) via
+  `StaffInvitationMail` (Arabic RTL Blade). `SetupPasswordController` (guest middleware) verifies
+  signature + hashed token + email match + not-expired + not-used + not-already-activated — any
+  failure renders `auth/InvitationInvalid` (never a 500); a valid POST hashes the password, sets
+  `is_active`/`email_verified_at`, marks the token used, logs in → `/dashboard`. POST rate-limited
+  5/hour/IP (`throttle:setup-password` limiter in `AppServiceProvider`); every attempt logged
+  without the token. `LoginRequest::authenticate()` now also rejects `is_active=false`.
+  `admin.users.resend-invitation` (super_admin) re-issues a fresh token for any non-activated
+  account. `Admin/Users/Index.vue` create modal drops the password field; a "بانتظار التفعيل"
+  badge + "إعادة إرسال الدعوة" action appear for accounts with a NULL password. The Breeze
+  forgot-password flow was already present and is untouched.
 - **2026-08-25 — Project Finalize/Archive.** A nullable `final_file_path` string column was added
   to `projects` (migration `2026_08_25_150000_add_final_file_path_to_projects_table.php`, placed
   `->after('final_score')`). `Project::canBeFinalizedBy(User $user): bool` (super_admin always;
@@ -163,16 +190,32 @@
 | name | varchar(255) | No | — | Full name |
 | email | varchar(255), unique | No | — | Login email |
 | email_verified_at | timestamp | Yes | null | Email verification timestamp |
-| password | varchar(255) | No | — | Hashed password |
+| password | varchar(255) | Yes | null | Hashed password. Nullable since 2026-08-29 (`2026_08_29_000300_make_users_password_nullable`) — invited staff have NULL until they complete the setup-password flow |
 | remember_token | varchar(100) | Yes | null | Remember-me token |
-| registration_number | varchar(255), unique | Yes | null | College registration number |
+| employee_number | varchar(255), unique | Yes | null | Staff/employee number (college staff only; renamed from `registration_number` on 2026-08-29). `users` is a STAFF-ONLY table — students never log in; the genuine student number lives on `proposal_students.registration_number` and is unrelated |
 | department_id | bigint unsigned, FK | Yes | null | FK to departments.id (nullOnDelete) |
-| is_active | boolean | No | true | Account active flag |
+| is_active | boolean | No | true | Account active flag. Enforced at login since 2026-08-29 (`LoginRequest` rejects `is_active=false`); invited staff are created `false` and flipped `true` on setup completion |
 | created_at | timestamp | Yes | null | — |
 | updated_at | timestamp | Yes | null | — |
 
 **Foreign keys:** `department_id` references departments(id), nullOnDelete.
 **Spatie tables:** `model_has_roles`, `model_has_permissions`, `role_has_permissions`, `roles`, `permissions` are created by the Spatie migration.
+
+### Table: staff_invitations (added 2026-08-29)
+
+Backs the invite-only staff account-creation flow. One outstanding row per not-yet-activated user
+(`StaffInvitation::issueFor()` deletes any prior row before inserting a fresh one).
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| id | bigint unsigned, PK | No | auto | Primary key |
+| user_id | bigint unsigned, FK | No | — | FK to users.id, cascadeOnDelete |
+| token_hash | varchar(64), index | No | — | `hash('sha256', $plainToken)` — the plaintext token lives only in the emailed signed URL |
+| expires_at | timestamp | No | — | `now()->addHours(24)` at issue |
+| used_at | timestamp | Yes | null | Set when the setup-password POST succeeds; a used row rejects further attempts |
+| created_at | timestamp | Yes | null | — (no `updated_at`) |
+
+**Foreign keys:** `user_id` references users(id), cascadeOnDelete.
 
 ### Table: password_reset_tokens
 
@@ -415,7 +458,7 @@ prior to the 2026-08-17 lifecycle scope-down and confirmed to have never been im
 
 - **Table:** users
 - **Traits:** HasFactory, Notifiable, HasRoles (Spatie)
-- **Fillable:** name, email, password, registration_number, department_id, is_active
+- **Fillable:** name, email, password, employee_number, department_id, is_active
 - **Hidden:** password, remember_token
 - **Casts:** email_verified_at (datetime), password (hashed), is_active (boolean)
 - **Relationships:**
@@ -423,6 +466,18 @@ prior to the 2026-08-17 lifecycle scope-down and confirmed to have never been im
   - `supervisedProposals()` — HasMany(Proposal), FK: supervisor_id (renamed 2026-08-24 from
     `supervisedProjects()`/`HasMany(Project)` — now returns `Proposal` rows, since supervisor is a
     proposal-level attribute read by reference from `Project`, not stored on `projects`)
+
+### app/Models/StaffInvitation.php (added 2026-08-29)
+
+- **Table:** staff_invitations
+- **Timestamps:** `created_at` only (`UPDATED_AT = null`)
+- **Fillable:** user_id, token_hash, expires_at, used_at
+- **Casts:** expires_at (datetime), used_at (datetime)
+- **Relationships:** `user()` — BelongsTo(User)
+- **Statics:** `issueFor(User): string` — deletes any prior row for the user, inserts a fresh one
+  (`token_hash` = sha256 of a 64-char `Str::random`, `expires_at` = now +24h), returns the PLAIN
+  token. `signedUrlFor(User, string $plainToken): string` — `URL::temporarySignedRoute('staff.setup-password', <that user's expires_at>, ['token' => …, 'email' => …])`.
+- **Helpers:** `isExpired()`, `isUsed()`
 
 ### app/Models/Department.php
 
@@ -582,6 +637,20 @@ Reference table model for `projects.status_id` (the Project lifecycle) — indep
 ### app/Http/Controllers/Controller.php
 
 Base controller. Empty — extends Laravel's base Controller.
+
+### app/Http/Controllers/Auth/SetupPasswordController.php (added 2026-08-29)
+
+**Purpose:** the guest-only staff account-activation flow (invite email → set password → login).
+
+| Method | HTTP + URL | Receives | Does | Returns | Roles |
+|---|---|---|---|---|---|
+| create() | GET /setup-password/{token} | token, ?email | `resolveValidInvitation()`; on success renders the form with the user's read-only name/email/role + `submitUrl` = the current signed URL | Inertia: auth/SetupPassword or auth/InvitationInvalid | guest |
+| store() | POST /setup-password/{token} | SetupPasswordRequest, token | `resolveValidInvitation()`; on success `Hash::make` the password, set `is_active`+`email_verified_at`, mark the invitation `used_at`, `Auth::login`, regenerate session | Redirect /dashboard with flash, or Inertia: auth/InvitationInvalid | guest + `throttle:setup-password` (5/hour/IP) |
+
+`resolveValidInvitation(Request, token, stage)` (protected) returns the `StaffInvitation` or `null`
+on ANY failure — bad `hasValidSignature()`, unknown sha256(token), `email` mismatch (`hash_equals`),
+`password` already set, `used_at` set, or `expires_at` past — and `Log::warning`s each failure and
+`Log::info`s each success with `user_id`/`ip`/`outcome`, never the token.
 
 ### app/Http/Controllers/DashboardController.php
 
@@ -1997,6 +2066,10 @@ composer run dev
 ```
 
 App will be accessible at: http://localhost:8000
+
+### Mailpit (required for manual testing of the staff-invitation flow)
+
+The `.env` mail settings point at Mailpit (`MAIL_MAILER=smtp`, `MAIL_HOST=127.0.0.1`, `MAIL_PORT=1025`); the automated test suite uses the `array` mailer and does not need it. To manually exercise the invite-only account-creation flow (Fix 5, 2026-08-29), install Mailpit from https://mailpit.axllent.org/docs/install/ (or `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`), run `mailpit`, and read delivered invitations at http://localhost:8025.
 
 ### Running Tests
 

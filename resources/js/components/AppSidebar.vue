@@ -4,7 +4,7 @@ import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/vue3';
-import { BarChart2, BookOpen, Building2, FileText, FolderOpen, LayoutGrid, Search, Upload, UserCheck, Users } from 'lucide-vue-next';
+import { BarChart2, Building2, FileText, FolderOpen, LayoutGrid, Search, Upload, UserCheck, Users } from 'lucide-vue-next';
 import { computed } from 'vue';
 import Logo from './Brand/Logo.vue';
 
@@ -24,7 +24,6 @@ const navByRole = computed(() => {
                 { title: 'البحث', href: '/search', icon: Search },
                 { title: 'التقارير', href: '/reports/department', icon: BarChart2 },
                 { title: 'استيراد', href: '/import', icon: Upload },
-                { title: 'تصفح المشاريع', href: '/browse', icon: BookOpen },
             ];
         case 'dept_manager':
             return [
@@ -35,7 +34,6 @@ const navByRole = computed(() => {
                 { title: 'الممتحنون', href: '/examiners', icon: UserCheck },
                 { title: 'البحث', href: '/search', icon: Search },
                 { title: 'التقارير', href: '/reports/department', icon: BarChart2 },
-                { title: 'تصفح المشاريع', href: '/browse', icon: BookOpen },
             ];
         case 'dept_staff':
             return [
@@ -43,20 +41,17 @@ const navByRole = computed(() => {
                 { title: 'المقترحات', href: '/proposals', icon: FileText },
                 { title: 'المشاريع', href: '/projects', icon: FolderOpen },
                 { title: 'البحث', href: '/search', icon: Search },
-                { title: 'تصفح المشاريع', href: '/browse', icon: BookOpen },
             ];
         case 'supervisor':
             return [
                 { title: 'لوحة التحكم', href: '/dashboard', icon: LayoutGrid },
                 { title: 'مشاريعي', href: '/projects/my', icon: FolderOpen },
                 { title: 'البحث', href: '/search', icon: Search },
-                { title: 'تصفح المشاريع', href: '/browse', icon: BookOpen },
             ];
         default:
             return [
                 { title: 'لوحة التحكم', href: '/dashboard', icon: LayoutGrid },
                 { title: 'البحث', href: '/search', icon: Search },
-                { title: 'تصفح المشاريع', href: '/browse', icon: BookOpen },
             ];
     }
 });

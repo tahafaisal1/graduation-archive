@@ -6,17 +6,20 @@ use App\Models\Department;
 use App\Models\Project;
 use App\Models\Proposal;
 use App\Models\Specialization;
+use App\Services\SearchService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PublicController extends Controller
 {
+    public function __construct(private readonly SearchService $search) {}
+
     public function index(): Response
     {
         $stats = [
-            'total_projects'        => Project::where('status_id', Project::STATUS_ARCHIVED)->where('is_deleted', false)->count(),
-            'total_departments'     => Department::count(),
+            'total_projects' => Project::where('status_id', Project::STATUS_ARCHIVED)->where('is_deleted', false)->count(),
+            'total_departments' => Department::count(),
             'total_specializations' => Specialization::count(),
         ];
 
@@ -30,11 +33,8 @@ class PublicController extends Controller
             ->where('is_deleted', false)
             ->with(['proposal.department', 'proposal.specialization']);
 
-        if ($search = $request->input('search')) {
-            $query->whereHas('proposal', function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
-            });
+        if ($search = trim((string) $request->input('search'))) {
+            $this->search->projectTextMatch($query, mb_strtolower($search));
         }
 
         if ($deptId = $request->input('department_id')) {
@@ -60,11 +60,11 @@ class PublicController extends Controller
             ->pluck('academic_year');
 
         return Inertia::render('Public/Browse', [
-            'projects'        => $projects,
-            'departments'     => $departments,
+            'projects' => $projects,
+            'departments' => $departments,
             'specializations' => $specializations,
-            'years'           => $years,
-            'filters'         => $request->only(['search', 'department_id', 'specialization_id', 'academic_year']),
+            'years' => $years,
+            'filters' => $request->only(['search', 'department_id', 'specialization_id', 'academic_year']),
         ]);
     }
 

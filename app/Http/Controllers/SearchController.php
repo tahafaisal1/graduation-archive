@@ -15,20 +15,11 @@ class SearchController extends Controller
 
     public function index(Request $request): Response
     {
-        $filters = $request->only([
-            'search', 'department_id', 'specialization_id',
-            'academic_year', 'supervisor_id', 'status', 'sort',
-        ]);
-
-        $projects = $this->search->searchProposals($filters);
-        $projects->getCollection()->load([
-            'students' => fn ($q) => $q->select('id', 'full_name', 'proposal_id'),
-        ]);
+        $filters = $request->only(['search']);
 
         return Inertia::render('Search/Index', [
-            'projects'      => $projects,
-            'filterOptions' => $this->search->getFilterOptions(),
-            'filters'       => $filters,
+            'results' => $this->search->searchInternal($filters),
+            'filters' => $filters,
         ]);
     }
 

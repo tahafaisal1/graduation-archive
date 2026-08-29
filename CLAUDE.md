@@ -35,7 +35,9 @@ Phase 1 (Active Now):
 1. roles (Spatie) — 5 roles
 2. departments
 3. specializations
-4. users (+ registration_number field)
+4. users (+ employee_number field) — STAFF-ONLY table (students never log in; they live in
+   proposal_students.registration_number, a genuine student number). `employee_number` is the
+   college staff/employee number, distinct from the student registration number.
 5. proposals — the paper-approved form (title/description/dept/spec/supervisor/students/PDF);
    2-state lifecycle (مقترح/مؤرشف), never graded
 6. proposal_students (weak entity, with status/withdrawal) — belongs to a proposal, not a project
@@ -171,6 +173,42 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - Max upload: 15MB PDF only
 
 ## Current Status
+- ✅ **Phase 1 Closeout — 5 targeted fixes** (branch `fix/phase1-closeout`), 292/292 suite green,
+  `npm run build` clean:
+  1. **Public landing page** (`Welcome.vue`) — all login entry points removed (header button, hero
+     secondary button, bottom CTA band repurposed to `/browse`). `/login` stays reachable by URL;
+     staff bookmark it. The authed-only "لوحة التحكم" header link stays.
+  2. **`AppSidebar.vue`** — the "تصفح المشاريع" (`/browse`) item removed from all 5 role menus
+     (`BookOpen` import dropped). `/browse` is the public path; staff use `/search` + `/projects`.
+  3. **Expanded search** — `SearchService::proposalTextMatch()` / `projectTextMatch()` OR-match
+     title, description, academic_year, student full_name, supervisor name, examiner full_name,
+     department name, specialization name (trim + `mb_strtolower` server-side, `LOWER(col) LIKE`).
+     `PublicController::browse()` uses `projectTextMatch` (still archived-PROJECTS-only).
+     New `SearchService::searchInternal()` powers `/search`: a pending-proposals query UNION an
+     all-non-deleted-projects query, merged into one manually-built `LengthAwarePaginator`, each
+     row carrying an entity badge ("مقترح" / "مشروع قيد التنفيذ" / "مشروع مؤرشف") and the correct
+     route (`proposals.show` vs `projects.show`). `Search/Index.vue` renders the flat badged list.
+     `detectSimilarity()` left title-only (semantically correct). `search.suggestions` unchanged.
+  4. **`users.registration_number` → `users.employee_number`** — `users` is a STAFF-ONLY table
+     (the 5 roles are all staff; students never log in — they live in
+     `proposal_students.registration_number`, a genuine student number that is NOT renamed).
+     Standalone reversible migration `2026_08_29_000100_rename_registration_number_to_employee_number_on_users_table`;
+     `User::$fillable`, `UserFactory` (now emits `employee_number`), `Store/UpdateUserRequest`,
+     `Admin\UserController`, and `Admin/Users/Index.vue` (label "الرقم الوظيفي") all updated.
+  5. **Invite-only account creation** — super_admin fills the user form (name, email,
+     employee_number, department, role — NO password); `store()` creates the user with
+     `password` NULL + `is_active` false, assigns the Spatie role, and emails a **signed**
+     (`URL::temporarySignedRoute`, 24h) setup link `/setup-password/{token}?email=…`.
+     `staff_invitations` table holds a **sha256-hashed** single-use token (`token_hash`,
+     `expires_at`, `used_at`). `SetupPasswordController` (guest-only) validates signature + hashed
+     token + email-match + not-expired + not-used + not-already-activated — any failure renders a
+     friendly `auth/InvitationInvalid` page, never a 500. Valid POST hashes the password, sets
+     `is_active` + `email_verified_at`, marks the token used, logs the user in → `/dashboard`.
+     POST rate-limited `5/hour/IP` (`throttle:setup-password`); every attempt logged
+     (`user_id`, IP, outcome — never the token). `LoginRequest` now also rejects any
+     `is_active=false` user. `/admin/users` shows a "بانتظار التفعيل" badge + "إعادة إرسال الدعوة"
+     row action for never-activated accounts (`admin.users.resend-invitation`, invalidates the old
+     token). `users.password` is now nullable. The Breeze forgot-password flow is untouched.
 - ✅ **Project Finalize/Archive** — see
   `.superpowers/sdd/2026-08-25-project-finalize-archive/` for the full per-task history. Adds a
   nullable `final_file_path` string column to `projects`; `Project::canBeFinalizedBy()`
@@ -414,7 +452,7 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
   - UserController::index() updated: returns { data, links, meta: { current_page, last_page, total, per_page } } (transformed paginator)
   - Pages/Admin/Users/Index.vue — full rewrite per Part 2 spec:
     - Filter bar: search (400ms debounce) + role/dept/is_active selects → preserveScroll:true router.get
-    - Table: 8 columns (#, الاسم, البريد, رقم القيد, القسم, الدور, الحالة, الإجراءات)
+    - Table: 8 columns (#, الاسم, البريد, الرقم الوظيفي, القسم, الدور, الحالة, الإجراءات)
     - Role badge colours: super_admin=red, dept_manager=blue, supervisor=green, dept_staff=yellow, viewer=gray
     - Role labels: مدير النظام / مدير القسم / مشرف / موظف القسم / مشاهد
     - Active badge: green "نشط" / red "غير نشط"
@@ -472,7 +510,7 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - ✅ All migrations created and finalized (14 migrations, column names aligned to spec)
 - ✅ Database connected to MariaDB (graduation_archive) — config cache issue resolved
 - ✅ All 9 Eloquent models created with fillable, casts, and relationships
-- ✅ User model updated — HasRoles trait, registration_number, department_id, is_active
+- ✅ User model updated — HasRoles trait, employee_number, department_id, is_active
 - ✅ Spatie RBAC seeded — 5 roles: super_admin, dept_manager, supervisor, dept_staff, viewer
 - ✅ ProjectStatus seeded — 10 statuses (archived → cancelled)
 - ✅ Admin user seeded — admin@admin.com / password / role: super_admin

@@ -61,12 +61,6 @@ defineProps<{
                     <Logo size="md" />
                 </Link>
                 <span class="font-display font-bold text-primary hidden md:block">نظام أرشفة مشاريع التخرج</span>
-                <Link
-                    :href="route('login')"
-                    class="inline-flex items-center px-5 py-2 rounded-lg border-2 border-primary text-primary font-body text-sm font-medium hover:bg-primary hover:text-white transition-colors"
-                >
-                    تسجيل الدخول
-                </Link>
             </div>
         </header>
 

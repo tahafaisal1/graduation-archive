@@ -105,6 +105,44 @@
 
 ### Bugfixes / Corrections
 
+- **2026-09-06 — Excel import closeout (5 fixes).** Branch `worktree-excel-import-closeout` off
+  `main` (b074ad1). Closes semantic/technical gaps a read-only diagnostic found in the bulk-import
+  feature against the post-split model. 302/302 suite green, `npm run build` clean.
+  1. **Optional examiner columns.** `ProjectImportTemplate::headings()` gains
+     `examiner_1_name`/`examiner_1_notes`/`examiner_2_name`/`examiner_2_notes` after `final_score`,
+     all optional. No per-examiner score column — `final_score` stays the single project-level
+     grade (per-examiner scoring is not in the in-system model either).
+  2. **Importer creates examiners + evaluations.** `ProjectsImport::processRow()`, after the
+     project is instantiated + archived, for each non-blank examiner slot runs
+     `Examiner::firstOrCreate(['full_name' => …, 'department_id' => <row dept>])` (de-dups a person
+     across rows/files), attaches `project_examiners` (`assigned_by` = `Auth::id()`, null when
+     unauthenticated), and creates an `evaluations` row only when that slot's notes are non-blank.
+     Name present + no notes → examiner only. Name blank → slot skipped.
+  3. **Imported PDFs → `Project::final_file_path`.** `ImportController::uploadPdfs()` resolves the
+     title-matched `Proposal`, then writes the ZIP entry to its instantiated
+     `Project::final_file_path` (was `Proposal::draft_file_path`) — the column in-system finalized
+     projects use and that `Projects/Show`/`Public/Show` read. A matched proposal with no
+     instantiated project is `Log::warning`ed and skipped (no crash). Also fixed a latent bug in
+     the same method: the temp-zip path was `storage_path('app/'.$path)` while the `local` disk
+     root is `storage/app/private`, so `$zip->open()` always failed and every PDF upload silently
+     did nothing — now `Storage::disk('local')->path($zipPath)`.
+  4. **Two technical bugs.** (4a) `proposal_students.registration_number` made nullable (migration
+     `2026_09_06_000100_make_proposal_students_registration_number_nullable`) — a valid student
+     name + blank reg cell now imports. (4b) `Projects/Show.vue`'s "الملف النهائي" card is now
+     `v-else-if="project.final_file_path"` (was `v-else` → `/storage/null` for archived-but-no-PDF
+     imported projects), matching `Public/Show.vue:150`.
+  5. **UI copy + wizard flow.** `Import/Index.vue` — the `import_summary` watcher landed the user
+     on step 4 (PDF upload), skipping the step-3 results screen; now lands on step 3. Step-3
+     pre-/post-import copy names both entities. Column-help table lists the 4 examiner columns as
+     "اختياري". Step 1 notes that the `[EXAMPLE]` row is skipped.
+  - **Deliberate model asymmetry:** bulk import is a DISTINCT code path from the in-system finalize
+     flow — it deliberately does NOT enforce the exactly-2-examiners + score + PDF invariant
+     because historical archival data may be incomplete (0/1/2 examiners per row all valid, an
+     ungraded row still archives). Documented in CLAUDE.md's Current Status for future readers.
+  - `tests/Feature/Import/ImportTest.php` — 9 new tests + extra assertions on `valid row creates
+     project successfully` (`proposal.status_id === STATUS_ARCHIVED`, `final_score` matches Excel).
+     Plan: `docs/superpowers/plans/2026-09-06-excel-import-closeout.md`.
+
 - **2026-08-26 — Supervisor "مشاريعي" route, proposal/project terminology, instantiate-button
   wording.** Fixes 3 issues confirmed by a read-only gap analysis
   (`docs/analysis/current-system-behavior.md` on branch `analysis-current-system-behavior`, issues
@@ -352,7 +390,7 @@ carrying forward the same creator-or-department-manager permission check describ
 | id | bigint unsigned, PK | No | auto | Primary key |
 | proposal_id | bigint unsigned, FK | No | — | FK to proposals.id (cascadeOnDelete) |
 | full_name | varchar(255) | No | — | Student full name |
-| registration_number | varchar(255) | No | — | Student registration number |
+| registration_number | varchar(255) | Yes | null | Student registration number. Nullable since 2026-09-06 (`2026_09_06_000100_make_proposal_students_registration_number_nullable`) — historical bulk imports may lack a student reg number |
 | status | varchar(255) | No | active | Student status: active, withdrawn, completed |
 | withdrawal_date | date | Yes | null | Date of withdrawal if withdrawn |
 | created_at | timestamp | Yes | null | — |

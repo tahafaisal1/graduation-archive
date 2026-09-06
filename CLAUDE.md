@@ -173,6 +173,50 @@ fields on `projects`, not as pipeline stages — see "Key Business Rules".
 - Max upload: 15MB PDF only
 
 ## Current Status
+- ✅ **Excel Import Closeout — 5 fixes** (branch `worktree-excel-import-closeout`), 302/302 suite
+  green, `npm run build` clean. Closes semantic/technical gaps a read-only diagnostic found in the
+  bulk-import feature against the post-split model:
+  1. **Optional examiner columns.** `ProjectImportTemplate::headings()` gains 4 columns after
+     `final_score` — `examiner_1_name`, `examiner_1_notes`, `examiner_2_name`, `examiner_2_notes`,
+     all OPTIONAL. No per-examiner score column (per-examiner scoring isn't in the in-system model
+     either; only notes are per-examiner). `final_score` stays the single project-level grade.
+  2. **Importer creates examiners + evaluations.** `ProjectsImport::processRow()`, after the
+     project is instantiated + archived, for each non-blank examiner slot: `Examiner::firstOrCreate`
+     on `full_name` + the row's `department_id` (de-dups the same person across rows/files),
+     attaches a `project_examiners` pivot row (`assigned_by` = `Auth::id()`, null when the importer
+     runs unauthenticated — matches `ProjectExaminerController`), and — only when that slot's notes
+     are non-blank — creates an `evaluations` row. Name present + notes blank → examiner only.
+     Name blank → slot skipped entirely.
+  3. **Imported PDFs land on `Project::final_file_path`.** `ImportController::uploadPdfs()` now
+     resolves the matched `Proposal` (by title), then writes the ZIP entry to its instantiated
+     `Project::final_file_path` — the same column in-system finalized projects use and that
+     `Projects/Show`/`Public/Show` read — instead of `Proposal::draft_file_path`. A matched
+     proposal with no instantiated project is `Log::warning`ed and skipped (added to `unmatched`),
+     never a crash. Also fixed a latent bug in the same method: the temp-zip path was built as
+     `storage_path('app/'.$path)` while the `local` disk root is `storage/app/private`, so
+     `$zip->open()` always failed and every PDF upload silently did nothing — now
+     `Storage::disk('local')->path($zipPath)`.
+  4. **Two technical bugs.** (4a) `proposal_students.registration_number` made nullable (migration
+     `2026_09_06_000100_make_proposal_students_registration_number_nullable`) — a valid student
+     name with a blank reg cell now imports (the importer already passed `null` there). (4b)
+     `Projects/Show.vue` — the "الملف النهائي" card is now `v-else-if="project.final_file_path"`
+     (was `v-else`, rendering `/storage/null` for archived-but-no-PDF imported projects), matching
+     `Public/Show.vue:150`'s existing guard.
+  5. **UI copy + wizard flow.** `Import/Index.vue` — the `import_summary` watcher landed the user
+     on step 4 (PDF upload), skipping the step-3 results screen; it now lands on step 3 so the
+     user reviews the success/failure summary and explicitly chooses to continue to PDF upload or
+     finish. Step-3 pre-import and post-import copy now names both entities ("مقترح مؤرشف ومشروع
+     مقابل لكل صف صالح" / "مقترح ومشروع تم أرشفتهم بنجاح"). Column-help table lists the 4 new
+     examiner columns as "اختياري". Step 1 gains a note that the `[EXAMPLE]` first row is skipped.
+  - **Deliberate model asymmetry (documented for future readers):** bulk import is a DISTINCT code
+     path from the in-system finalize flow (`POST /projects/{id}/finalize`). It deliberately does
+     NOT enforce the exactly-2-examiners + score + PDF invariant — imported rows are historical
+     fully-archived past work whose paper records may be incomplete, so 0, 1, or 2 examiners per
+     row are all valid, and an ungraded row still archives.
+  - `tests/Feature/Import/ImportTest.php` — 9 new tests (blank-reg, template headings, 5 examiner
+     shapes, 2 PDF-routing) + extra assertions on `valid row creates project successfully`
+     (`proposal.status_id === STATUS_ARCHIVED`, `project.final_score` matches the Excel value),
+     locking the post-split contract the diagnostic flagged as untested. 24 Import tests total.
 - ✅ **Phase 1 Closeout — 5 targeted fixes** (branch `fix/phase1-closeout`), 292/292 suite green,
   `npm run build` clean:
   1. **Public landing page** (`Welcome.vue`) — all login entry points removed (header button, hero

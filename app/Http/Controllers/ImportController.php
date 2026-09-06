@@ -7,6 +7,8 @@ use App\Imports\ProjectsImport;
 use App\Models\Proposal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
@@ -65,14 +67,17 @@ class ImportController extends Controller
         ]);
 
         $zipPath = $request->file('zip_file')->store('temp', 'local');
-        $fullPath = storage_path('app/' . $zipPath);
+        // Resolve via the disk, not storage_path('app/...') — the `local`
+        // disk root is storage/app/private, so the hand-built path missed
+        // the file and every upload silently failed to open.
+        $fullPath = Storage::disk('local')->path($zipPath);
 
         $zip = new ZipArchive;
         if ($zip->open($fullPath) !== true) {
             return back()->with('error', 'تعذّر فتح ملف ZIP');
         }
 
-        $matched   = 0;
+        $matched = 0;
         $unmatched = [];
 
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -83,34 +88,59 @@ class ImportController extends Controller
             }
 
             $baseName = pathinfo($entry, PATHINFO_FILENAME);
-            $proposal = Proposal::where('title', $baseName)
+            $proposal = Proposal::with('instantiatedProject')
+                ->where('title', $baseName)
                 ->where('is_deleted', false)
+                ->orderByDesc('id') // deterministic if a title was imported more than once — newest wins
                 ->first();
 
             if (! $proposal) {
                 $unmatched[] = $baseName;
+
                 continue;
             }
 
-            // Extract PDF content and save to public storage
-            $pdfContent  = $zip->getFromIndex($i);
-            $storagePath = 'projects/' . uniqid('import_') . '.pdf';
-            \Illuminate\Support\Facades\Storage::disk('public')->put($storagePath, $pdfContent);
+            // Imported/historical projects keep their final PDF on
+            // Project::final_file_path — the same column in-system finalized
+            // projects use, and the column Projects/Show + Public/Show read.
+            // (Before 2026-09 this wrongly wrote proposals.draft_file_path.)
+            $project = $proposal->instantiatedProject;
 
-            // draft_file_path lives on the Proposal (the paper form), not the
-            // instantiated Project — see the 2026-08-24 split. There is no
-            // per-document tracking any more (project_documents was dropped).
-            $proposal->update(['draft_file_path' => $storagePath]);
+            if (! $project) {
+                // Should not happen after the import flow (every imported
+                // proposal is instantiated), but a proposal created some
+                // other way could still match by title — skip, don't crash.
+                Log::warning('uploadPdfs: matched proposal has no instantiated project; skipping PDF', [
+                    'proposal_id' => $proposal->id,
+                    'title' => $baseName,
+                ]);
+                $unmatched[] = $baseName;
+
+                continue;
+            }
+
+            $pdfContent = $zip->getFromIndex($i);
+            if ($pdfContent === false) {
+                // Corrupt / unreadable entry — don't write a 0-byte file.
+                $unmatched[] = $baseName;
+
+                continue;
+            }
+
+            $storagePath = 'projects/final/'.uniqid('import_').'.pdf';
+            Storage::disk('public')->put($storagePath, $pdfContent);
+
+            $project->update(['final_file_path' => $storagePath]);
 
             $matched++;
         }
 
         $zip->close();
-        \Illuminate\Support\Facades\Storage::disk('local')->delete($zipPath);
+        Storage::disk('local')->delete($zipPath);
 
         $message = "تم ربط {$matched} ملف PDF بالمشاريع";
         if (count($unmatched) > 0) {
-            $message .= '. لم يُطابق: ' . implode(', ', array_slice($unmatched, 0, 5));
+            $message .= '. لم يُطابق: '.implode(', ', array_slice($unmatched, 0, 5));
             if (count($unmatched) > 5) {
                 $message .= ' وآخرون';
             }
@@ -119,7 +149,7 @@ class ImportController extends Controller
         return back()
             ->with('success', $message)
             ->with('pdf_summary', [
-                'matched'   => $matched,
+                'matched' => $matched,
                 'unmatched' => $unmatched,
             ]);
     }

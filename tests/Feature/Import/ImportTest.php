@@ -1,13 +1,18 @@
 <?php
 
+use App\Exports\ProjectImportTemplate;
 use App\Imports\ProjectsImport;
 use App\Models\Department;
+use App\Models\Examiner;
 use App\Models\Project;
+use App\Models\Proposal;
 use App\Models\Specialization;
 use Database\Seeders\ProjectLifecycleStatusSeeder;
 use Database\Seeders\ProjectStatusSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -35,18 +40,20 @@ function makeImportFile(array $rows): UploadedFile
         'student_2_name', 'student_2_reg',
         'student_3_name', 'student_3_reg',
         'final_score',
+        'examiner_1_name', 'examiner_1_notes',
+        'examiner_2_name', 'examiner_2_notes',
     ];
 
-    $spreadsheet = new Spreadsheet();
-    $sheet       = $spreadsheet->getActiveSheet();
+    $spreadsheet = new Spreadsheet;
+    $sheet = $spreadsheet->getActiveSheet();
     $sheet->fromArray([$headers], null, 'A1');
 
     foreach ($rows as $i => $row) {
         $rowData = array_map(fn ($h) => $row[$h] ?? '', $headers);
-        $sheet->fromArray([$rowData], null, 'A' . ($i + 2));
+        $sheet->fromArray([$rowData], null, 'A'.($i + 2));
     }
 
-    $path = sys_get_temp_dir() . '/import_test_' . uniqid() . '.xlsx';
+    $path = sys_get_temp_dir().'/import_test_'.uniqid().'.xlsx';
     IOFactory::createWriter($spreadsheet, 'Xlsx')->save($path);
 
     return new UploadedFile(
@@ -63,9 +70,9 @@ function makeImportFile(array $rows): UploadedFile
  */
 function makeImportDeps(): array
 {
-    $dept       = Department::factory()->create(['code' => 'CS']);
-    $spec       = Specialization::factory()->create([
-        'name'          => 'Software Engineering',
+    $dept = Department::factory()->create(['code' => 'CS']);
+    $spec = Specialization::factory()->create([
+        'name' => 'Software Engineering',
         'department_id' => $dept->id,
     ]);
     $supervisor = userWithRole('supervisor');
@@ -79,20 +86,40 @@ function makeImportDeps(): array
 function validImportRow(array $deps, array $overrides = []): array
 {
     return array_merge([
-        'project_title'       => 'Test Import Project',
-        'description'         => 'A test description',
-        'academic_year'       => '2023/2024',
-        'department_code'     => $deps['dept']->code,
+        'project_title' => 'Test Import Project',
+        'description' => 'A test description',
+        'academic_year' => '2023/2024',
+        'department_code' => $deps['dept']->code,
         'specialization_name' => $deps['spec']->name,
-        'supervisor_email'    => $deps['supervisor']->email,
-        'student_1_name'      => 'Ahmed Ali',
-        'student_1_reg'       => 'ST001',
-        'student_2_name'      => '',
-        'student_2_reg'       => '',
-        'student_3_name'      => '',
-        'student_3_reg'       => '',
-        'final_score'         => '85.50',
+        'supervisor_email' => $deps['supervisor']->email,
+        'student_1_name' => 'Ahmed Ali',
+        'student_1_reg' => 'ST001',
+        'student_2_name' => '',
+        'student_2_reg' => '',
+        'student_3_name' => '',
+        'student_3_reg' => '',
+        'final_score' => '85.50',
+        'examiner_1_name' => '',
+        'examiner_1_notes' => '',
+        'examiner_2_name' => '',
+        'examiner_2_notes' => '',
     ], $overrides);
+}
+
+/**
+ * Builds a real .zip UploadedFile containing one PDF per given "title => bytes".
+ */
+function makePdfZip(array $pdfsByTitle): UploadedFile
+{
+    $path = sys_get_temp_dir().'/pdf_zip_'.uniqid().'.zip';
+    $zip = new ZipArchive;
+    $zip->open($path, ZipArchive::CREATE);
+    foreach ($pdfsByTitle as $title => $bytes) {
+        $zip->addFromString($title.'.pdf', $bytes);
+    }
+    $zip->close();
+
+    return new UploadedFile($path, 'pdfs.zip', 'application/zip', null, true);
 }
 
 // ── 1. Access control ──────────────────────────────────────────────────────────
@@ -117,6 +144,18 @@ test('template download returns valid xlsx file', function () {
         ->get(route('import.template'))
         ->assertOk()
         ->assertDownload('projects_import_template.xlsx');
+});
+
+test('template headings include the four optional examiner columns', function () {
+    $headings = (new ProjectImportTemplate)->headings();
+
+    expect($headings)->toContain('examiner_1_name')
+        ->toContain('examiner_1_notes')
+        ->toContain('examiner_2_name')
+        ->toContain('examiner_2_notes');
+
+    expect(array_search('final_score', $headings))
+        ->toBeLessThan(array_search('examiner_1_name', $headings));
 });
 
 // ── 3. File validation (HTTP layer) ───────────────────────────────────────────
@@ -157,14 +196,14 @@ test('import rejects files larger than 5MB', function () {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('valid row creates project successfully', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([validImportRow($deps)]));
 
     $this->assertDatabaseHas('proposals', [
-        'title'         => 'Test Import Project',
+        'title' => 'Test Import Project',
         'academic_year' => '2023/2024',
-        'is_deleted'    => false,
+        'is_deleted' => false,
     ]);
 
     $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
@@ -172,13 +211,18 @@ test('valid row creates project successfully', function () {
         ->and($project->status_id)->toBe(Project::STATUS_ARCHIVED) // final_score present → archived
         ->and($project->is_deleted)->toBeFalse();
 
+    // Lock the post-split import contract the diagnostic flagged as untested:
+    $proposal = Proposal::where('title', 'Test Import Project')->first();
+    expect($proposal->status_id)->toBe(Proposal::STATUS_ARCHIVED)
+        ->and((float) $project->final_score)->toBe(85.5);
+
     expect($import->getSummary()['success_count'])->toBe(1);
 });
 
 // ── 5. Per-row failure isolation ───────────────────────────────────────────────
 
 test('invalid department_code fails that row only', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([
         validImportRow($deps, ['department_code' => 'NONEXISTENT']),
@@ -193,7 +237,7 @@ test('invalid department_code fails that row only', function () {
 });
 
 test('invalid specialization_name fails that row only', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([
         validImportRow($deps, ['specialization_name' => 'Unknown Specialization']),
@@ -208,7 +252,7 @@ test('invalid specialization_name fails that row only', function () {
 });
 
 test('invalid supervisor_email fails that row only', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([
         validImportRow($deps, ['supervisor_email' => 'nobody@nowhere.com']),
@@ -223,7 +267,7 @@ test('invalid supervisor_email fails that row only', function () {
 });
 
 test('missing required field fails that row', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([
         validImportRow($deps, ['project_title' => '']),
@@ -240,15 +284,15 @@ test('missing required field fails that row', function () {
 // ── 6. Students ────────────────────────────────────────────────────────────────
 
 test('multiple students in one row are created correctly', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([validImportRow($deps, [
         'student_1_name' => 'Ahmed Ali',
-        'student_1_reg'  => 'ST001',
+        'student_1_reg' => 'ST001',
         'student_2_name' => 'Fatima Hassan',
-        'student_2_reg'  => 'ST002',
+        'student_2_reg' => 'ST002',
         'student_3_name' => 'Omar Khalid',
-        'student_3_reg'  => 'ST003',
+        'student_3_reg' => 'ST003',
     ])]));
 
     $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
@@ -257,15 +301,15 @@ test('multiple students in one row are created correctly', function () {
 });
 
 test('empty student slots are skipped not treated as errors', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([validImportRow($deps, [
         'student_1_name' => 'Ahmed Ali',
-        'student_1_reg'  => 'ST001',
+        'student_1_reg' => 'ST001',
         'student_2_name' => '',
-        'student_2_reg'  => '',
+        'student_2_reg' => '',
         'student_3_name' => '',
-        'student_3_reg'  => '',
+        'student_3_reg' => '',
     ])]));
 
     $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
@@ -275,10 +319,28 @@ test('empty student slots are skipped not treated as errors', function () {
     expect($import->getSummary()['failed_count'])->toBe(0);
 });
 
+test('row with a valid student name but blank reg cell imports successfully', function () {
+    $deps = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([validImportRow($deps, [
+        'student_1_name' => 'Layla Ahmed',
+        'student_1_reg' => '',
+    ])]));
+
+    expect($import->getSummary()['failed_count'])->toBe(0)
+        ->and($import->getSummary()['success_count'])->toBe(1);
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
+    expect($project)->not->toBeNull()
+        ->and($project->proposal->students()->count())->toBe(1)
+        ->and($project->proposal->students()->first()->full_name)->toBe('Layla Ahmed')
+        ->and($project->proposal->students()->first()->registration_number)->toBeNull();
+});
+
 // ── 7. Summary counts ─────────────────────────────────────────────────────────
 
 test('import summary shows correct success and fail counts', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([
         validImportRow($deps, ['project_title' => 'Valid Project One']),
@@ -297,7 +359,7 @@ test('import summary shows correct success and fail counts', function () {
 // ── 8. Preview vs actual import ────────────────────────────────────────────────
 
 test('preview does not save data to database', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: true);
     Excel::import($import, makeImportFile([validImportRow($deps)]));
 
@@ -310,10 +372,162 @@ test('preview does not save data to database', function () {
 });
 
 test('actual import saves data to database', function () {
-    $deps   = makeImportDeps();
+    $deps = makeImportDeps();
     $import = new ProjectsImport(dryRun: false);
     Excel::import($import, makeImportFile([validImportRow($deps)]));
 
     expect($import->getSummary()['success_count'])->toBe(1);
     $this->assertDatabaseCount('projects', 1);
+});
+
+// ── 9. Examiners + evaluations (Fix 2) ───────────────────────────────────────
+
+test('row with 2 examiner names and 2 notes creates 2 examiners and 2 evaluations', function () {
+    $deps = makeImportDeps();
+    $admin = userWithRole('super_admin');
+
+    $import = new ProjectsImport(dryRun: false);
+    $this->actingAs($admin);
+    Excel::import($import, makeImportFile([validImportRow($deps, [
+        'examiner_1_name' => 'Dr. Khalid',
+        'examiner_1_notes' => 'Strong defense',
+        'examiner_2_name' => 'Dr. Sara',
+        'examiner_2_notes' => 'Expand results chapter',
+    ])]));
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
+
+    expect($project->examiners()->count())->toBe(2)
+        ->and($project->evaluations()->count())->toBe(2);
+
+    expect(Examiner::where('full_name', 'Dr. Khalid')->where('department_id', $deps['dept']->id)->exists())->toBeTrue();
+
+    $pivot = $project->examiners()->where('full_name', 'Dr. Khalid')->first()->pivot;
+    expect($pivot->assigned_by)->toBe($admin->id);
+
+    expect($project->evaluations()->pluck('notes')->all())
+        ->toContain('Strong defense')
+        ->toContain('Expand results chapter');
+});
+
+test('row with 1 examiner name and 1 note creates 1 examiner and 1 evaluation', function () {
+    $deps = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([validImportRow($deps, [
+        'examiner_1_name' => 'Dr. Solo',
+        'examiner_1_notes' => 'Good work',
+    ])]));
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
+    expect($project->examiners()->count())->toBe(1)
+        ->and($project->evaluations()->count())->toBe(1)
+        ->and($project->evaluations()->first()->notes)->toBe('Good work');
+});
+
+test('row with 1 examiner name and no notes creates 1 examiner and 0 evaluations', function () {
+    $deps = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([validImportRow($deps, [
+        'examiner_1_name' => 'Dr. Nameonly',
+        'examiner_1_notes' => '',
+    ])]));
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
+    expect($project->examiners()->count())->toBe(1)
+        ->and($project->evaluations()->count())->toBe(0);
+});
+
+test('row with no examiner columns filled creates project with 0 examiners', function () {
+    $deps = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([validImportRow($deps)]));
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
+    expect($project->examiners()->count())->toBe(0)
+        ->and($project->evaluations()->count())->toBe(0);
+    // import must NOT enforce exactly-2 examiners
+    expect($import->getSummary()['failed_count'])->toBe(0);
+});
+
+test('same examiner name reused across two rows in one department is not duplicated', function () {
+    $deps = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([
+        validImportRow($deps, ['project_title' => 'Row A', 'examiner_1_name' => 'Dr. Shared']),
+        validImportRow($deps, ['project_title' => 'Row B', 'examiner_1_name' => 'Dr. Shared']),
+    ]));
+
+    expect(Examiner::where('full_name', 'Dr. Shared')->count())->toBe(1);
+
+    $shared = Examiner::where('full_name', 'Dr. Shared')->first();
+    expect($shared->projects()->count())->toBe(2);
+});
+
+test('same examiner name in both slots of one row attaches once and does not abort the import', function () {
+    $deps = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([
+        validImportRow($deps, [
+            'project_title' => 'Dup Examiner Row',
+            'examiner_1_name' => 'Dr. Twice',
+            'examiner_1_notes' => 'first note',
+            'examiner_2_name' => 'Dr. Twice',
+            'examiner_2_notes' => 'second note',
+        ]),
+        validImportRow($deps, ['project_title' => 'Later Row']),
+    ]));
+
+    expect($import->getSummary()['success_count'])->toBe(2)
+        ->and($import->getSummary()['failed_count'])->toBe(0);
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Dup Examiner Row'))->first();
+    expect($project->examiners()->count())->toBe(1)
+        ->and($project->evaluations()->count())->toBe(1);
+});
+
+// ── 10. PDF upload routing (Fix 3) ──────────────────────────────────────────
+
+test('uploadPdfs sets project final_file_path and not proposal draft_file_path', function () {
+    Storage::fake('public');
+    $deps = makeImportDeps();
+
+    Excel::import(new ProjectsImport(dryRun: false), makeImportFile([
+        validImportRow($deps, ['project_title' => 'Inventory System']),
+    ]));
+
+    $proposal = Proposal::where('title', 'Inventory System')->first();
+    $project = $proposal->instantiatedProject;
+
+    $this->actingAs(userWithRole('super_admin'))
+        ->post(route('import.pdfs'), ['zip_file' => makePdfZip(['Inventory System' => '%PDF-1.4 fake'])])
+        ->assertRedirect();
+
+    $project->refresh();
+    $proposal->refresh();
+
+    expect($project->final_file_path)->not->toBeNull()
+        ->and($proposal->draft_file_path)->toBeNull();
+
+    Storage::disk('public')->assertExists($project->final_file_path);
+});
+
+test('uploadPdfs logs a warning and does not crash when proposal has no instantiated project', function () {
+    Storage::fake('public');
+    Log::spy();
+    $deps = makeImportDeps();
+
+    $proposal = Proposal::factory()->create([
+        'title' => 'Orphan Proposal',
+        'department_id' => $deps['dept']->id,
+        'status_id' => Proposal::STATUS_PENDING,
+    ]);
+
+    $this->actingAs(userWithRole('super_admin'))
+        ->post(route('import.pdfs'), ['zip_file' => makePdfZip(['Orphan Proposal' => '%PDF-1.4 fake'])])
+        ->assertRedirect();
+
+    $proposal->refresh();
+    expect($proposal->draft_file_path)->toBeNull();
+
+    Log::shouldHaveReceived('warning')->once();
 });

@@ -29,6 +29,10 @@ class ProjectImportTemplate implements FromArray, WithHeadings, WithStyles
             'student_3_name',
             'student_3_reg',
             'final_score',
+            'examiner_1_name',
+            'examiner_1_notes',
+            'examiner_2_name',
+            'examiner_2_notes',
         ];
     }
 
@@ -49,6 +53,10 @@ class ProjectImportTemplate implements FromArray, WithHeadings, WithStyles
                 '',
                 '',
                 '85.50',
+                'د. خالد العتيبي',
+                'أداء ممتاز، عرض تقديمي قوي',
+                'د. سارة المطيري',
+                'يُنصح بتوسيع فصل النتائج',
             ],
         ];
     }
@@ -59,13 +67,13 @@ class ProjectImportTemplate implements FromArray, WithHeadings, WithStyles
             1 => [
                 'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
                 'fill' => [
-                    'fillType'   => Fill::FILL_SOLID,
+                    'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => '1E40AF'],
                 ],
             ],
             2 => [
                 'fill' => [
-                    'fillType'   => Fill::FILL_SOLID,
+                    'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => 'FEF9C3'],
                 ],
                 'font' => ['italic' => true, 'color' => ['rgb' => '92400E']],

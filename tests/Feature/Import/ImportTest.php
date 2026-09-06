@@ -463,6 +463,28 @@ test('same examiner name reused across two rows in one department is not duplica
     expect($shared->projects()->count())->toBe(2);
 });
 
+test('same examiner name in both slots of one row attaches once and does not abort the import', function () {
+    $deps = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([
+        validImportRow($deps, [
+            'project_title' => 'Dup Examiner Row',
+            'examiner_1_name' => 'Dr. Twice',
+            'examiner_1_notes' => 'first note',
+            'examiner_2_name' => 'Dr. Twice',
+            'examiner_2_notes' => 'second note',
+        ]),
+        validImportRow($deps, ['project_title' => 'Later Row']),
+    ]));
+
+    expect($import->getSummary()['success_count'])->toBe(2)
+        ->and($import->getSummary()['failed_count'])->toBe(0);
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Dup Examiner Row'))->first();
+    expect($project->examiners()->count())->toBe(1)
+        ->and($project->evaluations()->count())->toBe(1);
+});
+
 // ── 10. PDF upload routing (Fix 3) ──────────────────────────────────────────
 
 test('uploadPdfs sets project final_file_path and not proposal draft_file_path', function () {

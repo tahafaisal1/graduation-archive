@@ -91,6 +91,7 @@ class ImportController extends Controller
             $proposal = Proposal::with('instantiatedProject')
                 ->where('title', $baseName)
                 ->where('is_deleted', false)
+                ->orderByDesc('id') // deterministic if a title was imported more than once — newest wins
                 ->first();
 
             if (! $proposal) {
@@ -119,6 +120,13 @@ class ImportController extends Controller
             }
 
             $pdfContent = $zip->getFromIndex($i);
+            if ($pdfContent === false) {
+                // Corrupt / unreadable entry — don't write a 0-byte file.
+                $unmatched[] = $baseName;
+
+                continue;
+            }
+
             $storagePath = 'projects/final/'.uniqid('import_').'.pdf';
             Storage::disk('public')->put($storagePath, $pdfContent);
 

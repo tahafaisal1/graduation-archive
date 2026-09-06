@@ -11,6 +11,7 @@ use App\Models\Specialization;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
@@ -78,6 +79,25 @@ class ProjectsImport implements ToCollection, WithHeadingRow
             return;
         }
 
+        // Wrap the whole write phase per row: one bad row (a duplicated
+        // examiner name, an over-length value, a transient DB error) rolls
+        // back only its own proposal/project/students and is reported as a
+        // failed row — the rest of the file still imports. This preserves the
+        // per-row isolation the feature advertises now that a row also writes
+        // examiners + evaluations.
+        try {
+            DB::transaction(fn () => $this->persistRow($row, $title));
+        } catch (\Throwable $e) {
+            $this->fail($rowNumber, 'تعذّر حفظ الصف: '.$e->getMessage());
+
+            return;
+        }
+
+        $this->successCount++;
+    }
+
+    private function persistRow(array $row, string $title): void
+    {
         $department = Department::where('code', trim($row['department_code']))->first();
         $specialization = Specialization::where('name', trim($row['specialization_name']))
             ->where('department_id', $department->id)
@@ -134,6 +154,8 @@ class ProjectsImport implements ToCollection, WithHeadingRow
         // This is intentionally NOT the in-system finalize invariant
         // (exactly 2 examiners + score + PDF) — imported rows are
         // fully-archived past work whose paper records may be incomplete.
+        $attachedExaminerIds = [];
+
         foreach ([
             ['examiner_1_name', 'examiner_1_notes'],
             ['examiner_2_name', 'examiner_2_notes'],
@@ -150,6 +172,14 @@ class ProjectsImport implements ToCollection, WithHeadingRow
                 'department_id' => $department->id,
             ]);
 
+            // Both slots naming the same person (a common paper-record
+            // duplication) must not double-attach — project_examiners is
+            // unique on (project_id, examiner_id).
+            if (in_array($examiner->id, $attachedExaminerIds, true)) {
+                continue;
+            }
+            $attachedExaminerIds[] = $examiner->id;
+
             $project->examiners()->attach($examiner->id, ['assigned_by' => Auth::id()]);
 
             $notes = trim((string) ($row[$notesKey] ?? ''));
@@ -161,8 +191,6 @@ class ProjectsImport implements ToCollection, WithHeadingRow
                 ]);
             }
         }
-
-        $this->successCount++;
     }
 
     private function validate(array $row, string $title): ?string

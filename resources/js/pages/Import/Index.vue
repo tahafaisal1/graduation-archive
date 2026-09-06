@@ -74,7 +74,10 @@ watch(
     (val) => {
         if (val) {
             importResult.value = val
-            currentStep.value  = 4
+            // Land on the step-3 results view — the user reviews the
+            // success/failure summary, then explicitly chooses to go to the
+            // PDF-upload step or finish. Do NOT auto-advance past results.
+            currentStep.value  = 3
         }
     },
     { immediate: true },
@@ -156,6 +159,10 @@ const columns = [
     { name: 'student_3_name',      label: 'اسم الطالب الثالث',          required: false },
     { name: 'student_3_reg',       label: 'رقم تسجيل الطالب الثالث',    required: false },
     { name: 'final_score',         label: 'الدرجة النهائية',            required: false },
+    { name: 'examiner_1_name',     label: 'اسم الممتحن الأول (اختياري)',      required: false },
+    { name: 'examiner_1_notes',    label: 'ملاحظات الممتحن الأول (اختياري)',  required: false },
+    { name: 'examiner_2_name',     label: 'اسم الممتحن الثاني (اختياري)',     required: false },
+    { name: 'examiner_2_notes',    label: 'ملاحظات الممتحن الثاني (اختياري)', required: false },
 ]
 </script>
 
@@ -199,6 +206,9 @@ const columns = [
                 <p class="text-sm text-gray-600">
                     حمّل القالب أدناه، أدخل بيانات المشاريع في الأعمدة المحددة، ثم انتقل للخطوة التالية لرفعه.
                     لا تغيّر أسماء الأعمدة في الصف الأول.
+                </p>
+                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    اترك السطر الأول (المثال) كما هو أو احذفه — لن يُستورد.
                 </p>
 
                 <!-- Column reference table -->
@@ -373,7 +383,7 @@ const columns = [
                 <!-- Pre-import summary -->
                 <template v-if="!importResult">
                     <div v-if="previewResult" class="rounded-lg bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800">
-                        سيتم استيراد <strong>{{ previewResult.success_count }}</strong> مشروع صالح
+                        سيتم إنشاء مقترح مؤرشف ومشروع مقابل لكل صف صالح — <strong>{{ previewResult.success_count }}</strong> صف
                         <span v-if="previewResult.failed_count">
                             (سيُتخطى {{ previewResult.failed_count }} صف به أخطاء)
                         </span>.
@@ -408,7 +418,7 @@ const columns = [
                     <div class="grid grid-cols-2 gap-4">
                         <div class="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
                             <div class="text-4xl font-bold text-green-700">{{ importResult.success_count }}</div>
-                            <div class="text-sm text-gray-600 mt-1">مشروع تم استيراده بنجاح</div>
+                            <div class="text-sm text-gray-600 mt-1">مقترح ومشروع تم أرشفتهم بنجاح</div>
                         </div>
                         <div class="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
                             <div class="text-4xl font-bold text-red-600">{{ importResult.failed_count }}</div>

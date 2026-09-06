@@ -275,6 +275,24 @@ test('empty student slots are skipped not treated as errors', function () {
     expect($import->getSummary()['failed_count'])->toBe(0);
 });
 
+test('row with a valid student name but blank reg cell imports successfully', function () {
+    $deps   = makeImportDeps();
+    $import = new ProjectsImport(dryRun: false);
+    Excel::import($import, makeImportFile([validImportRow($deps, [
+        'student_1_name' => 'Layla Ahmed',
+        'student_1_reg'  => '',
+    ])]));
+
+    expect($import->getSummary()['failed_count'])->toBe(0)
+        ->and($import->getSummary()['success_count'])->toBe(1);
+
+    $project = Project::whereHas('proposal', fn ($q) => $q->where('title', 'Test Import Project'))->first();
+    expect($project)->not->toBeNull()
+        ->and($project->proposal->students()->count())->toBe(1)
+        ->and($project->proposal->students()->first()->full_name)->toBe('Layla Ahmed')
+        ->and($project->proposal->students()->first()->registration_number)->toBeNull();
+});
+
 // ── 7. Summary counts ─────────────────────────────────────────────────────────
 
 test('import summary shows correct success and fail counts', function () {

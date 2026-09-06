@@ -213,7 +213,7 @@ function finalizeProject() {
                         </template>
                         <p v-else class="text-sm text-gray-500">لا تملك صلاحية أرشفة هذا المشروع</p>
                     </div>
-                    <div v-else class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+                    <div v-else-if="project.final_file_path" class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
                         <h2 class="mb-4 text-base font-semibold text-gray-800 dark:text-gray-200">الملف النهائي</h2>
                         <a :href="'/storage/' + project.final_file_path" target="_blank" class="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
                             تحميل الملف النهائي
